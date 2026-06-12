@@ -4703,7 +4703,7 @@ function montarTelaConfig(){
             <h4>3. Baixar / conferir</h4>
             <p>Confere o que está online ou traz dados básicos de volta.</p>
             <button class="btn-main" type="button" onclick="testeGeralOnlineSistema()">Teste geral online</button>
-            <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados básicos</button>
+            <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados completos</button>
             <button class="btn-light" type="button" onclick="baixarPacientesOnlineSistema()">Baixar pacientes</button>
             <button class="btn-light" type="button" onclick="baixarAgendaOnlineSistema()">Baixar agenda</button>
             <button class="btn-light" type="button" onclick="baixarEstoqueOnlineSistema()">Baixar estoque</button>
@@ -11320,13 +11320,28 @@ function voltarAoProntuarioAposAutorizacao(paciente){
     try{renderCobrancasProntuario();}catch(e){}
   },100);
 }
-function buscarPacienteProntuarioPro(){
+async function buscarPacienteProntuarioPro(){
   const campo=document.getElementById("buscaProntuarioPro");
   const area=document.getElementById("resultadoBuscaProntuarioPro");
   if(!campo||!area)return;
   const termo=(campo.value||"").toLowerCase().trim();
   if(!termo){area.innerHTML="";return;}
-  const lista=get("pacientes").filter(p=>(p.nome||"").toLowerCase().includes(termo)||(p.cpf||"").toLowerCase().includes(termo)||(p.tel||"").toLowerCase().includes(termo)||(p.whats||"").toLowerCase().includes(termo)).slice(0,8);
+  let pacientes=get("pacientes");
+  let lista=pacientes.filter(p=>(p.nome||"").toLowerCase().includes(termo)||(p.cpf||"").toLowerCase().includes(termo)||(p.tel||"").toLowerCase().includes(termo)||(p.whats||"").toLowerCase().includes(termo)).slice(0,8);
+  const online=configOnlineSistema();
+  if(!lista.length && termo.length>=2 && online.ativo && online.clinicId && !window.__buscaProntuarioBaixandoOnline){
+    window.__buscaProntuarioBaixandoOnline=true;
+    area.innerHTML=`<button class="prontuario-busca-opcao" type="button">Buscando pacientes no online...</button>`;
+    try{
+      await baixarPacientesOnlineSistema();
+      pacientes=get("pacientes");
+      lista=pacientes.filter(p=>(p.nome||"").toLowerCase().includes(termo)||(p.cpf||"").toLowerCase().includes(termo)||(p.tel||"").toLowerCase().includes(termo)||(p.whats||"").toLowerCase().includes(termo)).slice(0,8);
+    }catch(e){
+      console.warn("Busca online de pacientes falhou:",e);
+    }finally{
+      window.__buscaProntuarioBaixandoOnline=false;
+    }
+  }
   area.innerHTML=lista.length?lista.map(p=>`<button class="prontuario-busca-opcao" onclick="selecionarPacienteProntuarioPro('${referenciaPacienteBusca(p)}')"><b>${prontuarioTexto(p.nome,"Paciente")}</b><small>CPF ${prontuarioTexto(typeof mascararCPF==="function"?mascararCPF(p.cpf):p.cpf)} · Contato ${prontuarioTexto(typeof mascararContato==="function"?mascararContato(p.whats||p.tel):p.whats||p.tel)}</small><span class="selecionar-paciente-mini">Selecionar</span></button>`).join(""):`<button class="prontuario-busca-opcao" type="button">Nenhum paciente encontrado</button>`;
 }
 function selecionarPacienteProntuarioPro(nomeCodificado){
@@ -11992,6 +12007,19 @@ async function sairOnlineSistema(){
   if(db) await db.auth.signOut();
   if(msg) msg.innerText="Acesso online desconectado.";
 }
+async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){
+  let timer=null;
+  try{
+    return await Promise.race([
+      consulta,
+      new Promise((_,reject)=>{
+        timer=setTimeout(()=>reject(new Error(`${descricao} demorou demais. Confira a internet e tente novamente.`)),segundos*1000);
+      })
+    ]);
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
+}
 async function sincronizarPacienteOnlineSistema(paciente){
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
@@ -12030,51 +12058,61 @@ async function sincronizarPacientesOnlineSistema(){
 }
 async function baixarPacientesOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  salvarConfigOnlineRapidoSistema();
-  const online=configOnlineSistema();
-  const db=clienteSupabaseSistema();
-  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar pacientes.";return;}
-  const sessao=await db.auth.getSession();
-  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar pacientes.";return;}
-  if(msg) msg.innerText="Buscando pacientes online...";
-  const {data,error}=await db.from("patients").select("*").eq("clinic_id",online.clinicId).order("full_name");
-  if(error){if(msg) msg.innerText="Não foi possível baixar pacientes: "+error.message;return;}
-  const locais=get("pacientes");
-  const porNomeCpf=new Map(locais.map(p=>[(String(p.cpf||"").replace(/\D/g,"") || String(p.nome||"").toLowerCase()),p]));
-  (data || []).forEach(x=>{
-    const chave=String(x.cpf||"").replace(/\D/g,"") || String(x.full_name||"").toLowerCase();
-    const addr=x.address || {};
-    const emerg=x.emergency_contact || {};
-    const convertido={
-      id:porNomeCpf.get(chave)?.id || Date.now()+Math.random(),
-      numeroAtendimento:x.attendance_number || porNomeCpf.get(chave)?.numeroAtendimento || "",
-      nome:x.full_name || "",
-      cpf:x.cpf || "",
-      rg:x.rg || "",
-      nasc:x.birth_date || "",
-      estadoCivil:x.marital_status || "",
-      tel:x.phone || "",
-      whats:x.whatsapp || x.phone || "",
-      email:x.email || "",
-      profissao:x.profession || "",
-      cep:addr.cep || "",
-      rua:addr.rua || "",
-      numero:addr.numero || "",
-      complemento:addr.complemento || "",
-      bairro:addr.bairro || "",
-      cidade:addr.cidade || "",
-      uf:addr.uf || "",
-      emergencia:emerg.nome || "",
-      emergNome:emerg.nome || "",
-      emergParentesco:emerg.parentesco || "",
-      emergTel:emerg.telefone || "",
-      obs:x.notes || ""
-    };
-    porNomeCpf.set(chave,convertido);
-  });
-  set("pacientes",[...porNomeCpf.values()]);
-  atualizarTudo();
-  if(msg) msg.innerText=`${(data || []).length} paciente(s) baixado(s) do online para este computador.`;
+  try{
+    salvarConfigOnlineRapidoSistema();
+    const online=configOnlineSistema();
+    const db=clienteSupabaseSistema();
+    if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar pacientes.";return;}
+    const sessao=await db.auth.getSession();
+    if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar pacientes.";return;}
+    if(msg) msg.innerText="Buscando pacientes online...";
+    const resposta=await consultaOnlineComTempoSistema(
+      db.from("patients").select("*").eq("clinic_id",online.clinicId).order("full_name"),
+      "Busca de pacientes online"
+    );
+    const data=resposta.data || [];
+    const error=resposta.error;
+    if(error){if(msg) msg.innerText="Não foi possível baixar pacientes: "+error.message;return;}
+    const locais=get("pacientes");
+    const porNomeCpf=new Map(locais.map(p=>[(String(p.cpf||"").replace(/\D/g,"") || String(p.nome||"").toLowerCase()),p]));
+    data.forEach(x=>{
+      const chave=String(x.cpf||"").replace(/\D/g,"") || String(x.full_name||"").toLowerCase();
+      const addr=x.address || {};
+      const emerg=x.emergency_contact || {};
+      const convertido={
+        id:porNomeCpf.get(chave)?.id || Date.now()+Math.random(),
+        numeroAtendimento:x.attendance_number || porNomeCpf.get(chave)?.numeroAtendimento || "",
+        nome:x.full_name || "",
+        cpf:x.cpf || "",
+        rg:x.rg || "",
+        nasc:x.birth_date || "",
+        estadoCivil:x.marital_status || "",
+        tel:x.phone || "",
+        whats:x.whatsapp || x.phone || "",
+        email:x.email || "",
+        profissao:x.profession || "",
+        cep:addr.cep || "",
+        rua:addr.rua || "",
+        numero:addr.numero || "",
+        complemento:addr.complemento || "",
+        bairro:addr.bairro || "",
+        cidade:addr.cidade || "",
+        uf:addr.uf || "",
+        emergencia:emerg.nome || "",
+        emergNome:emerg.nome || "",
+        emergParentesco:emerg.parentesco || "",
+        emergTel:emerg.telefone || "",
+        obs:x.notes || ""
+      };
+      porNomeCpf.set(chave,convertido);
+    });
+    set("pacientes",[...porNomeCpf.values()]);
+    if(msg) msg.innerText=`${data.length} paciente(s) baixado(s) do online para este navegador. Atualizando telas...`;
+    try{atualizarTudo();}catch(e){console.warn("Atualização visual após baixar pacientes falhou:",e);}
+    if(msg) msg.innerText=`${data.length} paciente(s) baixado(s) do online. Agora pesquise na Central do Paciente.`;
+  }catch(e){
+    if(msg) msg.innerText="Não foi possível baixar pacientes: "+(e.message || String(e));
+  }
 }
 function pacienteLocalPorNomeOnlineSistema(nome){
   return get("pacientes").find(p=>String(p.nome || "").trim()===String(nome || "").trim()) || null;
@@ -12193,6 +12231,92 @@ async function enviarProntuarioOnlineSistema(){
   }
   if(msg) msg.innerText=falhas ? `Prontuário enviado parcialmente: ${ok} registro(s), ${falhas} falha(s). Último erro: ${ultimoErro}. Se aparecer tabela não encontrada, rode o SQL da etapa 2 no Supabase.` : `Prontuário sincronizado com sucesso: ${ok} registro(s) enviados.`;
 }
+function nomePacienteRegistroOnlineSistema(x){
+  return x && x.patients && x.patients.full_name ? x.patients.full_name : "";
+}
+function anamneseOnlineParaLocalSistema(x){
+  const skin=x.skin_data || {};
+  return {
+    id:x.local_id || x.id,
+    paciente:nomePacienteRegistroOnlineSistema(x),
+    data:x.record_date || "",
+    queixa:x.complaint || "",
+    objetivo:x.objective || "",
+    fototipo:skin.fototipo || "",
+    tipoPele:skin.tipoPele || "",
+    melasma:skin.melasma || "",
+    acne:skin.acne || "",
+    flacidez:skin.flacidez || "",
+    celulite:skin.celulite || "",
+    historicoEstetico:skin.historicoEstetico || {},
+    checks:skin.checks || [],
+    historicoSaude:x.health_history || {},
+    avaliacaoCorporal:x.body_assessment || {},
+    declaracaoVeracidade:!!x.truth_declaration,
+    declaracaoTexto:x.declaration_text || "",
+    assinatura:x.signature_data || "",
+    obs:x.notes || ""
+  };
+}
+function autorizacaoOnlineParaLocalSistema(x){
+  return {
+    id:x.local_id || x.id,
+    paciente:nomePacienteRegistroOnlineSistema(x),
+    proc:x.procedure_name || "Procedimento",
+    data:x.authorization_date || "",
+    profissional:x.professional_name || "",
+    registro:x.professional_registry || "",
+    cidade:x.city || "",
+    texto:x.term_text || "",
+    obs:x.notes || "",
+    assinatura:x.signature_data || "",
+    tipoAssinatura:x.signature_type || ""
+  };
+}
+function evolucaoOnlineParaLocalSistema(x){
+  return {
+    id:x.local_id || x.id,
+    paciente:nomePacienteRegistroOnlineSistema(x),
+    data:x.evolution_date || "",
+    proc:x.procedure_name || "",
+    profissional:x.professional_name || "",
+    queixaDia:x.complaint_goal || "",
+    conduta:x.conduct || "",
+    orientacoes:x.orientation_return || "",
+    intercorrencias:x.adverse_event || "",
+    dor:x.pain_level || "",
+    texto:x.evolution_text || "",
+    materiais:Array.isArray(x.materials) ? x.materials : []
+  };
+}
+async function baixarProntuarioOnlineSistema(){
+  const msg=document.getElementById("onlineStatusSistema");
+  salvarConfigOnlineRapidoSistema();
+  const online=configOnlineSistema();
+  const db=clienteSupabaseSistema();
+  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar prontuário.";return;}
+  const sessao=await db.auth.getSession();
+  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar prontuário.";return;}
+  if(msg) msg.innerText="Baixando prontuário online...";
+  const anamneses=await db.from("anamneses").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("record_date",{ascending:true});
+  if(anamneses.error){if(msg) msg.innerText="Não foi possível baixar anamneses: "+anamneses.error.message;return;}
+  const autorizacoes=await db.from("authorizations").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("authorization_date",{ascending:true});
+  if(autorizacoes.error){if(msg) msg.innerText="Não foi possível baixar autorizações: "+autorizacoes.error.message;return;}
+  const evolucoes=await db.from("evolutions").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("evolution_date",{ascending:true});
+  if(evolucoes.error){if(msg) msg.innerText="Não foi possível baixar evoluções: "+evolucoes.error.message;return;}
+  const mapaAna=new Map(get("anamnese").map(x=>[String(x.id),x]));
+  (anamneses.data || []).forEach(x=>mapaAna.set(String(x.local_id || x.id),anamneseOnlineParaLocalSistema(x)));
+  set("anamnese",[...mapaAna.values()]);
+  const mapaAut=new Map(get("autorizacoes").map(x=>[String(x.id),x]));
+  (autorizacoes.data || []).forEach(x=>mapaAut.set(String(x.local_id || x.id),autorizacaoOnlineParaLocalSistema(x)));
+  set("autorizacoes",[...mapaAut.values()]);
+  const mapaEvo=new Map(get("evolucao").map(x=>[String(x.id),x]));
+  (evolucoes.data || []).forEach(x=>mapaEvo.set(String(x.local_id || x.id),evolucaoOnlineParaLocalSistema(x)));
+  set("evolucao",[...mapaEvo.values()]);
+  atualizarTudo();
+  const total=(anamneses.data || []).length+(autorizacoes.data || []).length+(evolucoes.data || []).length;
+  if(msg) msg.innerText=`${total} registro(s) de prontuário baixados do online.`;
+}
 function dataUrlParaBlobSistema(dataUrl){
   const partes=String(dataUrl || "").split(",");
   if(partes.length<2) return null;
@@ -12257,6 +12381,42 @@ async function enviarFotosOnlineSistema(){
     set("fotos",locais);
   }
   if(msg) msg.innerText=falhas ? `Fotos enviadas parcialmente: ${ok} enviada(s), ${falhas} falha(s). Último erro: ${ultimoErro}. Se aparecer bucket/tabela não encontrada, rode o SQL da etapa 3 no Supabase.` : `${ok} foto(s) enviada(s) para o Storage online com sucesso.`;
+}
+function fotoOnlineParaLocalSistema(x,url){
+  return {
+    id:x.local_id || x.id,
+    paciente:nomePacienteRegistroOnlineSistema(x),
+    data:x.photo_date || "",
+    tipo:x.type_position || "Registro clínico",
+    nomeArquivo:x.original_name || "",
+    obs:x.notes || "",
+    onlinePath:x.file_path || "",
+    imagem:url || ""
+  };
+}
+async function baixarFotosOnlineSistema(){
+  const msg=document.getElementById("onlineStatusSistema");
+  salvarConfigOnlineRapidoSistema();
+  const online=configOnlineSistema();
+  const db=clienteSupabaseSistema();
+  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar fotos.";return;}
+  const sessao=await db.auth.getSession();
+  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar fotos.";return;}
+  if(msg) msg.innerText="Baixando fotos online...";
+  const {data,error}=await db.from("clinical_photos").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("photo_date",{ascending:true});
+  if(error){if(msg) msg.innerText="Não foi possível baixar fotos: "+error.message;return;}
+  const mapa=new Map(get("fotos").map(x=>[String(x.id),x]));
+  for(const foto of (data || [])){
+    let url="";
+    if(foto.file_path){
+      const assinada=await db.storage.from("clinical-photos").createSignedUrl(foto.file_path,60*60*24);
+      if(!assinada.error && assinada.data && assinada.data.signedUrl) url=assinada.data.signedUrl;
+    }
+    mapa.set(String(foto.local_id || foto.id),fotoOnlineParaLocalSistema(foto,url));
+  }
+  set("fotos",[...mapa.values()]);
+  try{renderArquivosFotos();renderProntuarioProfissional();}catch(e){}
+  if(msg) msg.innerText=`${(data || []).length} foto(s) baixada(s) do online.`;
 }
 function horaFimAgendaOnlineSistema(hora,duracao){
   const fim=minutosAgenda(hora)+Number(duracao || 30);
@@ -12557,6 +12717,25 @@ function financeiroOnlineParaLocalSistema(x){
     origem:x.source || "Online"
   };
 }
+function cobrancaOnlineParaLocalSistema(x){
+  return {
+    id:x.local_id || x.id,
+    paciente:nomePacienteRegistroOnlineSistema(x),
+    data:x.charge_date || "",
+    procedimento:x.procedure_name || "Procedimento",
+    proc:x.procedure_name || "Procedimento",
+    valorTotal:Number(x.total_value || 0),
+    valorPago:Number(x.paid_value || 0),
+    forma:x.payment_method || "",
+    parcelas:Number(x.installments || 1),
+    taxaPerc:Number(x.fee_percent || 0),
+    taxaValor:Number(x.fee_value || 0),
+    liquido:Number(x.net_value || 0),
+    status:x.status || "Pago",
+    vencimento:x.due_date || "",
+    obs:x.notes || ""
+  };
+}
 async function baixarFinanceiroOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   salvarConfigOnlineRapidoSistema();
@@ -12568,12 +12747,17 @@ async function baixarFinanceiroOnlineSistema(){
   if(msg) msg.innerText="Baixando financeiro online...";
   const {data,error}=await db.from("financial_entries").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("entry_date",{ascending:false});
   if(error){if(msg) msg.innerText="Não foi possível baixar financeiro: "+error.message;return;}
+  const cobrancas=await db.from("procedure_charges").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("charge_date",{ascending:false});
+  if(cobrancas.error){if(msg) msg.innerText="Não foi possível baixar cobranças: "+cobrancas.error.message;return;}
   const locais=get("financeiroPro");
   const mapa=new Map(locais.map(x=>[String(x.id),x]));
   (data || []).forEach(x=>mapa.set(String(x.local_id || x.id),financeiroOnlineParaLocalSistema(x)));
   set("financeiroPro",[...mapa.values()]);
+  const mapaCob=new Map(get("cobrancasProntuario").map(x=>[String(x.id),x]));
+  (cobrancas.data || []).forEach(x=>mapaCob.set(String(x.local_id || x.id),cobrancaOnlineParaLocalSistema(x)));
+  set("cobrancasProntuario",[...mapaCob.values()]);
   try{renderFinanceiroPro();renderCobrancasProntuario();}catch(e){}
-  if(msg) msg.innerText=`${(data || []).length} lançamento(s) financeiros baixados do online.`;
+  if(msg) msg.innerText=`${(data || []).length} lançamento(s) financeiros e ${(cobrancas.data || []).length} cobrança(s) baixados do online.`;
 }
 async function contarTabelaOnlineSistema(tabela){
   const online=configOnlineSistema();
@@ -12626,12 +12810,15 @@ async function enviarTudoOnlineSistema(){
 }
 async function baixarTudoBasicoOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  if(msg) msg.innerText="Baixando dados básicos do online. Aguarde...";
+  if(msg) msg.innerText="Baixando dados completos do online. Aguarde...";
   await baixarPacientesOnlineSistema();
+  await baixarProntuarioOnlineSistema();
+  await baixarFotosOnlineSistema();
   await baixarAgendaOnlineSistema();
   await baixarEstoqueOnlineSistema();
   await baixarFinanceiroOnlineSistema();
-  if(msg) msg.innerText="Baixa básica concluída: pacientes, agenda, estoque e financeiro.";
+  atualizarTudo();
+  if(msg) msg.innerText="Baixa completa concluída: pacientes, prontuário, fotos, agenda, estoque e financeiro.";
 }
 function inserirPainelPreparacaoOnlineConfig(){
   const tela=document.querySelector("#configuracoes .box");
@@ -12675,7 +12862,7 @@ function inserirPainelPreparacaoOnlineConfig(){
         <h4>3. Baixar / conferir</h4>
         <p>Confere o que está online ou traz dados básicos de volta.</p>
         <button class="btn-main" type="button" onclick="testeGeralOnlineSistema()">Teste geral online</button>
-        <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados básicos</button>
+        <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados completos</button>
         <button class="btn-light" type="button" onclick="baixarPacientesOnlineSistema()">Baixar pacientes</button>
         <button class="btn-light" type="button" onclick="baixarAgendaOnlineSistema()">Baixar agenda</button>
         <button class="btn-light" type="button" onclick="baixarEstoqueOnlineSistema()">Baixar estoque</button>

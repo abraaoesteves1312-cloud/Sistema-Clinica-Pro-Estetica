@@ -11080,7 +11080,14 @@ function salvarEvolucaoProntuario(){
   atualizarTudo();
   prontuarioAbaAtual = "evolucao";
   renderProntuarioProfissional();
-  try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}
+  try{
+    sincronizarEvolucaoRecenteOnlineSistema(dados)
+      .catch(e=>{
+        const msg=document.getElementById("onlineStatusSistema");
+        if(msg) msg.innerText="Evolução salva neste computador, mas não subiu online: "+(e.message || e);
+        console.warn("Evolução não sincronizou online:",e);
+      });
+  }catch(e){}
   try{sincronizarModuloAposSalvarSistema("estoque");}catch(e){}
   alert("Evolução salva no prontuário e materiais baixados do estoque.");
 }
@@ -12254,6 +12261,19 @@ async function excluirOnlinePorLocalIdSistema(tabela,localId){
   const db=clienteSupabaseSistema();
   const {error}=await db.from(tabela).delete().eq("clinic_id",online.clinicId).eq("local_id",String(localId));
   if(error) console.warn("Exclusão online não aplicada:",tabela,localId,error);
+}
+async function sincronizarEvolucaoRecenteOnlineSistema(dados){
+  const msg=document.getElementById("onlineStatusSistema");
+  if(!dados || !dados.paciente) return false;
+  if(!(await sistemaOnlinePodeSincronizarSilencioso())){
+    if(msg) msg.innerText="Evolução salva neste computador. Entre no online para sincronizar.";
+    return false;
+  }
+  const patientId=await obterPacienteOnlineIdSistema(dados.paciente);
+  if(!patientId) throw new Error("Paciente não localizado no online: "+dados.paciente);
+  await upsertOnlineSistema("evolutions",evolucaoParaOnlineSistema(dados,patientId));
+  if(msg) msg.innerText="Evolução sincronizada no online.";
+  return true;
 }
 async function enviarProntuarioOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");

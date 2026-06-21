@@ -4691,6 +4691,7 @@ function montarTelaConfig(){
             <button class="btn-light" type="button" onclick="entrarOnlineSistema()">Entrar online</button>
             <button class="btn-light" type="button" onclick="sairOnlineSistema()">Sair online</button>
             <button class="btn-main" type="button" onclick="testarConexaoOnlineSistema()">Testar conexão</button>
+            <button class="btn-light" type="button" onclick="diagnosticarConexaoOnlineSistema()">Diagnosticar conexão</button>
           </div>
           <div class="online-central-bloco">
             <h4>2. Enviar dados</h4>
@@ -4715,6 +4716,7 @@ function montarTelaConfig(){
           </div>
         </div>
         <div id="onlineStatusSistema" class="msg">Online preparado. Use o teste geral para conferir pacientes, prontuário, fotos, agenda, estoque e financeiro.</div>
+        <div id="onlineDiagnosticoSistema" class="msg" style="white-space:pre-line;margin-top:10px;display:none"></div>
       </section>
       <div class="config-grid-pro">
         <section class="config-card-pro">
@@ -11948,12 +11950,20 @@ function configOnlineSistema(){
   const conf=configSistemaSeguro();
   return conf.online || {};
 }
+function limparUrlSupabaseSistema(valor){
+  let url=String(valor || "").trim().replace(/\s+/g,"");
+  if(url && !/^https?:\/\//i.test(url)) url="https://"+url;
+  return url.replace(/\/+$/,"");
+}
+function limparChaveSupabaseSistema(valor){
+  return String(valor || "").trim().replace(/\s+/g,"");
+}
 function coletarConfigOnlineSistema(){
   const anterior=configOnlineSistema();
   return {
     ativo:!!document.getElementById("onlineAtivoSistema")?.checked,
-    supabaseUrl:(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || "").trim(),
-    supabaseAnonKey:(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || "").trim(),
+    supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || ""),
+    supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || ""),
     clinicId:(document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim()
   };
 }
@@ -12082,6 +12092,125 @@ async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){
     ]);
   }finally{
     if(timer) clearTimeout(timer);
+  }
+}
+async function promessaComTempoSistema(promessa,descricao,segundos=12){
+  let timer=null;
+  try{
+    return await Promise.race([
+      promessa,
+      new Promise((_,reject)=>{
+        timer=setTimeout(()=>reject(new Error(`${descricao} demorou demais para responder.`)),segundos*1000);
+      })
+    ]);
+  }finally{
+    if(timer) clearTimeout(timer);
+  }
+}
+function mostrarDiagnosticoOnlineSistema(linhas){
+  const box=document.getElementById("onlineDiagnosticoSistema");
+  if(!box) return;
+  box.style.display="block";
+  box.innerText=linhas.join("\n");
+}
+function textoErroOnlineSistema(e){
+  const msg=(e && e.message) ? e.message : String(e || "erro desconhecido");
+  if(/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)){
+    return "Falha de rede: o navegador não conseguiu conversar com o Supabase.";
+  }
+  return msg;
+}
+async function diagnosticarConexaoOnlineSistema(){
+  const status=document.getElementById("onlineStatusSistema");
+  const linhas=["Diagnóstico da conexão online:"];
+  const marcar=(ok,texto,detalhe="")=>{
+    linhas.push(`${ok ? "OK" : "FALHOU"} - ${texto}${detalhe ? " ("+detalhe+")" : ""}`);
+    mostrarDiagnosticoOnlineSistema(linhas);
+  };
+  try{
+    salvarConfigOnlineRapidoSistema();
+    const online=configOnlineSistema();
+    const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
+    const senha=document.getElementById("onlineSenhaSistema")?.value || "";
+    if(document.getElementById("onlineSupabaseUrl")) document.getElementById("onlineSupabaseUrl").value=online.supabaseUrl || "";
+    if(document.getElementById("onlineSupabaseAnonKey")) document.getElementById("onlineSupabaseAnonKey").value=online.supabaseAnonKey || "";
+    if(status) status.innerText="Rodando diagnóstico online...";
+
+    marcar(!!online.ativo,"Modo online ativado",online.ativo ? "" : "marque a caixa Ativar modo online");
+    if(!online.ativo) return;
+
+    marcar(!!window.supabase,"Biblioteca Supabase carregada",window.supabase ? "" : "recarregue a página com F5 ou teste outro navegador");
+    if(!window.supabase) return;
+
+    marcar(/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(online.supabaseUrl || ""),"URL do Supabase válida",online.supabaseUrl || "vazia");
+    if(!online.supabaseUrl) return;
+
+    marcar(/^sb_publishable_/.test(online.supabaseAnonKey || "") || /^eyJ/.test(online.supabaseAnonKey || ""),"Chave pública preenchida",online.supabaseAnonKey ? "sem espaços aparentes" : "vazia");
+    if(!online.supabaseAnonKey) return;
+
+    marcar(!!online.clinicId,"ID da clínica preenchido",online.clinicId || "vazio");
+    if(!online.clinicId) return;
+
+    let respostaServidor=null;
+    try{
+      respostaServidor=await promessaComTempoSistema(fetch(`${online.supabaseUrl}/auth/v1/settings`,{
+        method:"GET",
+        headers:{apikey:online.supabaseAnonKey,Authorization:`Bearer ${online.supabaseAnonKey}`}
+      }),"Teste direto do servidor Supabase",12);
+      marcar(respostaServidor && respostaServidor.status<500,"Servidor Supabase respondeu",`status ${respostaServidor.status}`);
+    }catch(e){
+      marcar(false,"Servidor Supabase respondeu",textoErroOnlineSistema(e));
+      linhas.push("Orientação: teste outro navegador, desligue tradutor/extensões, ou teste outra internet. Esse erro acontece antes da senha.");
+      mostrarDiagnosticoOnlineSistema(linhas);
+      if(status) status.innerText="Diagnóstico encontrou falha de rede antes do login.";
+      return;
+    }
+
+    const db=clienteSupabaseSistema();
+    marcar(!!db,"Cliente Supabase criado",db ? "" : "URL ou chave não foram aceitas pela biblioteca");
+    if(!db) return;
+
+    if(!email || !senha){
+      marcar(false,"Login online","preencha e-mail e senha para testar login");
+      if(status) status.innerText="Diagnóstico parou: falta e-mail ou senha.";
+      return;
+    }
+
+    try{
+      const login=await promessaComTempoSistema(db.auth.signInWithPassword({email,password:senha}),"Login no Supabase",15);
+      if(login.error){
+        marcar(false,"Login online",login.error.message || "erro de autenticação");
+        if(status) status.innerText="Diagnóstico encontrou erro no login.";
+        return;
+      }
+      marcar(true,"Login online","usuário autenticado");
+    }catch(e){
+      marcar(false,"Login online",textoErroOnlineSistema(e));
+      if(status) status.innerText="Diagnóstico encontrou falha no login.";
+      return;
+    }
+
+    try{
+      const teste=await consultaOnlineComTempoSistema(db.from("patients").select("id").eq("clinic_id",online.clinicId).limit(1),"Consulta da tabela patients",15);
+      if(teste.error){
+        marcar(false,"Tabela patients / permissão",teste.error.message || "consulta recusada");
+        if(status) status.innerText="Diagnóstico encontrou erro no banco.";
+        return;
+      }
+      marcar(true,"Tabela patients / permissão",`${(teste.data || []).length} registro(s) de teste`);
+    }catch(e){
+      marcar(false,"Tabela patients / permissão",textoErroOnlineSistema(e));
+      if(status) status.innerText="Diagnóstico encontrou falha ao consultar banco.";
+      return;
+    }
+
+    linhas.push("Resultado: conexão online funcionando.");
+    mostrarDiagnosticoOnlineSistema(linhas);
+    if(status) status.innerText="Diagnóstico concluído: conexão online funcionando.";
+  }catch(e){
+    linhas.push("FALHOU - Diagnóstico interrompido: "+textoErroOnlineSistema(e));
+    mostrarDiagnosticoOnlineSistema(linhas);
+    if(status) status.innerText="Diagnóstico interrompido: "+textoErroOnlineSistema(e);
   }
 }
 async function sincronizarPacienteOnlineSistema(paciente){
@@ -12931,6 +13060,7 @@ function inserirPainelPreparacaoOnlineConfig(){
         <button class="btn-light" type="button" onclick="entrarOnlineSistema()">Entrar online</button>
         <button class="btn-light" type="button" onclick="sairOnlineSistema()">Sair online</button>
         <button class="btn-main" type="button" onclick="testarConexaoOnlineSistema()">Testar conexão</button>
+        <button class="btn-light" type="button" onclick="diagnosticarConexaoOnlineSistema()">Diagnosticar conexão</button>
       </div>
       <div class="online-central-bloco">
         <h4>2. Enviar dados</h4>
@@ -12955,6 +13085,7 @@ function inserirPainelPreparacaoOnlineConfig(){
       </div>
     </div>
     <div id="onlineStatusSistema" class="msg">Online preparado. Use o teste geral para conferir pacientes, prontuário, fotos, agenda, estoque e financeiro.</div>
+    <div id="onlineDiagnosticoSistema" class="msg" style="white-space:pre-line;margin-top:10px;display:none"></div>
   </section>`;
   if(ref) ref.insertAdjacentHTML("afterend",html);
   else tela.insertAdjacentHTML("beforeend",html);

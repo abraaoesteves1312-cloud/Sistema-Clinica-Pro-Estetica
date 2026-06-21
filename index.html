@@ -1753,7 +1753,7 @@ body > #resultadoPacientes{
 }
 .config-user-campos{
   display:grid;
-  grid-template-columns:1fr 1.2fr 1fr .9fr auto;
+  grid-template-columns:repeat(2,minmax(0,1fr));
   gap:10px;
   align-items:start;
 }
@@ -1791,6 +1791,14 @@ body > #resultadoPacientes{
 .config-acesso-opcao input{
   width:auto;
   margin:0;
+}
+.config-user-status{
+  min-height:42px;
+  justify-content:flex-start;
+  background:#f7fff8;
+}
+.config-user-campos .btn-light{
+  min-height:42px;
 }
 .config-linha-usuario.usuario-admin .config-user-acessos{
   opacity:.72;
@@ -11817,6 +11825,7 @@ async function autenticarUsuarioConfigLocal(email,senha){
   const usuarios=Array.isArray(conf.usuarios)?conf.usuarios:[];
   const usuario=usuarios.find(u=>String(u.email||"").trim().toLowerCase()===email);
   if(!usuario) return null;
+  if(usuario.ativo===false) return null;
   if(usuario.senhaHash){
     const hash=await senhaHashSistemaProfissional(email,senha);
     return hash===usuario.senhaHash ? usuario : null;
@@ -11836,6 +11845,7 @@ async function criarPrimeiroAdministradorLocal(email,senha){
     email,
     perfil:"Administrador",
     acessos:todosAcessosSistema(),
+    ativo:true,
     senhaHash:await senhaHashSistemaProfissional(email,senha)
   };
   conf.usuarios=[usuario];
@@ -11894,7 +11904,7 @@ window.entrarRapido = function(){
 window.criarTeste = function(){
   alert("Modo demonstração desativado nesta versão profissional. Crie usuários em Configurações.");
 };
-window.adicionarUsuarioConfig = function(nome="", email="", senha="", perfil="Funcionario", acessos=null, senhaHash="", senhaLegado=""){
+window.adicionarUsuarioConfig = function(nome="", email="", senha="", perfil="Funcionario", acessos=null, senhaHash="", senhaLegado="", ativo=true){
   montarTelaConfig();
   const area=document.getElementById("configUsuariosLista");
   if(!area) return;
@@ -11908,6 +11918,7 @@ window.adicionarUsuarioConfig = function(nome="", email="", senha="", perfil="Fu
         <input class="config-user-email" placeholder="E-mail de acesso" value="${escapeHtmlAttr(email)}">
         <input class="config-user-senha" type="password" placeholder="${hash || legado ? "Nova senha, se quiser trocar" : "Senha"}" value="">
         <select class="config-user-perfil" onchange="atualizarPermissoesUsuarioConfig(this)">${opcoesPerfilUsuarioConfig(perfilNormalizado)}</select>
+        <label class="config-acesso-opcao config-user-status"><input class="config-user-ativo" type="checkbox"${ativo!==false?" checked":""}> Ativo</label>
         <button class="btn-light" type="button" onclick="removerLinhaConfig(this)">Remover</button>
       </div>
       <div class="config-user-acessos">
@@ -11922,7 +11933,7 @@ window.renderConfigUsuarios = function(lista){
   if(!area) return;
   area.innerHTML="";
   const base=Array.isArray(lista)&&lista.length?lista:[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()}];
-  base.forEach(u=>adicionarUsuarioConfig(u.nome||"",u.email||"","",u.perfil||"Administrador",u.acessos||null,u.senhaHash||"",u.senha||""));
+  base.forEach(u=>adicionarUsuarioConfig(u.nome||"",u.email||"","",u.perfil||"Administrador",u.acessos||null,u.senhaHash||"",u.senha||"",u.ativo!==false));
 };
 window.coletarUsuariosConfig = async function(){
   const linhas=[...document.querySelectorAll("#configUsuariosLista .config-linha-usuario")];
@@ -11944,6 +11955,7 @@ window.coletarUsuariosConfig = async function(){
       email,
       senhaHash,
       perfil,
+      ativo:linha.querySelector(".config-user-ativo")?.checked !== false,
       acessos:perfil==="Administrador" ? todosAcessosSistema() : [...new Set(["dashboard",...[...linha.querySelectorAll(".config-user-acesso:checked")].map(chk=>chk.value).filter(Boolean)])]
     });
   }

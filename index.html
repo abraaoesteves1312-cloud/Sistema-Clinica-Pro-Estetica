@@ -2849,7 +2849,18 @@ body > #resultadoPacientes{
 </section>
 
 <script>
-const procedimentos=["Avaliação","Retorno","Limpeza de Pele","Toxina Botulínica","Fios PDO","Bioestimulador de Colágeno","Depilação a Laser","Aplicação de Enzimas","Radiofrequência","Ultrassom para Redução de Medidas","Tratamento Capilar","Massagem Relaxante","Massagem Modeladora","Plano Nutricional / Bioimpedância"];
+const procedimentos=[
+  "Avaliação estética","Retorno","Limpeza de Pele","Limpeza de Pele Profunda","Limpeza de Pele Personalizada",
+  "Peeling químico","Peeling enzimático","Microagulhamento","Drug delivery","Laser facial","Luz intensa pulsada",
+  "Radiofrequência facial","Toxina Botulínica","Toxina Botulínica / Botox","Preenchimento labial",
+  "Preenchimento facial","Bioestimulador de Colágeno","Fios PDO","Skinbooster","Harmonização facial",
+  "Depilação a Laser","Drenagem linfática","Massagem modeladora","Massagem relaxante","Criolipólise",
+  "Criofrequência","Ultrassom microfocado","Ultrassom para Redução de Medidas","Aplicação de Enzimas",
+  "Endermoterapia","Corrente russa","Corrente Aussie","Tratamento para celulite","Tratamento para estrias",
+  "Tratamento Capilar","Plano Nutricional","Bioimpedância","Plano Nutricional / Bioimpedância",
+  "Combo Emagrecimento","Combo Flacidez Zero Facial","Combo Renovação Facial","Combo Firmeza Total Corporal",
+  "Outro procedimento estético"
+];
 const horarios=["09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00"];
 const termos={
 "Fios PDO":{titulo:"TERMO DE CONSENTIMENTO E AUTORIZAÇÃO - PROCEDIMENTO COM FIOS DE PDO",sobre:"Os fios de PDO são fios absorvíveis utilizados para sustentação facial, estímulo de colágeno, melhora da flacidez, rejuvenescimento e definição de contornos.",pre:["Informar doenças, alergias, medicamentos, anticoagulantes, gestação, amamentação e procedimentos recentes.","Evitar álcool, exposição solar intensa e medicamentos sem orientação antes do procedimento.","Comparecer com a pele limpa e sem maquiagem.","Comunicar histórico de queloide, herpes, alterações de cicatrização ou infecção ativa."],contra:["Gestação, amamentação, infecção ativa, lesões na pele ou doenças autoimunes sem liberação.","Distúrbios de coagulação ou uso de anticoagulantes sem autorização médica.","Alergia conhecida ao material ou condição clínica incompatível."],riscos:["Vermelhidão, inchaço, hematomas, sensibilidade, dor leve e sensação de repuxamento.","Assimetria temporária, pequenas irregularidades, nódulos, fibrose, extrusão ou migração do fio.","Infecção, inflamação, reação alérgica, dor prolongada ou resultado insatisfatório."],pos:["Não massagear o local.","Evitar esforço físico intenso.","Dormir de barriga para cima.","Evitar exposição solar, calor excessivo e bebidas alcoólicas.","Evitar abrir excessivamente a boca nos primeiros dias.","Procurar a clínica em caso de dor intensa, secreção, febre ou alteração importante."]},
@@ -3070,7 +3081,7 @@ function abrirCentralPacienteAba(aba){
 }
 function optsPac(){let p=get("pacientes");return p.map(x=>`<option value="${x.nome}">${x.nome}</option>`).join("")||"<option>Nenhum paciente</option>"}
 function optsProc(){return procedimentos.map(x=>`<option value="${x}">${x}</option>`).join("")}
-function atualizarSelects(){[prontPaciente,anaPaciente,agePaciente,evoPaciente,autPaciente,botPaciente].forEach(s=>s.innerHTML=optsPac());if(typeof finPaciente!=="undefined"&&finPaciente)finPaciente.innerHTML='<option value="">Clínica / despesa geral</option>'+optsPac();[ageProc,evoProc,autProc].forEach(s=>s.innerHTML=optsProc());ageHora.innerHTML=horarios.map(h=>`<option>${h}</option>`).join("")}
+function atualizarSelects(){[prontPaciente,anaPaciente,agePaciente,evoPaciente,autPaciente,botPaciente].forEach(s=>s.innerHTML=optsPac());if(typeof finPaciente!=="undefined"&&finPaciente)finPaciente.innerHTML='<option value="">Clínica / despesa geral</option>'+optsPac();[ageProc,evoProc,autProc].forEach(s=>s.innerHTML=optsProc());preencherSelectHorariosAgenda()}
 function buscarCEP(){
   const cep = (pacCep.value || "").replace(/\D/g,"");
   if(cep.length !== 8) return;
@@ -6324,7 +6335,20 @@ function selecionarDiaAgenda(data){
   renderHorariosSeguro(data);
 }
 
+function preencherSelectHorariosAgenda(valorAtual){
+  const sel = document.getElementById("ageHora");
+  if(!sel || typeof horarios === "undefined") return;
+  const atual = valorAtual || sel.value || "";
+  sel.innerHTML = horarios.map(h=>`<option value="${h}">${h}</option>`).join("");
+  if(atual && horarios.includes(atual)){
+    sel.value = atual;
+  }else if(horarios.length){
+    sel.value = horarios[0];
+  }
+}
+
 function renderHorariosSeguro(dataVisual){
+  preencherSelectHorariosAgenda();
   const grade = document.getElementById("gradeHorarios");
   if(!grade || typeof horarios === "undefined") return;
 

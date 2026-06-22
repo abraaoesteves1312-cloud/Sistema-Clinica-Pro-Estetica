@@ -4771,8 +4771,11 @@ function montarTelaConfig(){
             <h4>3. Baixar / conferir</h4>
             <p>Confere o que está online ou traz dados básicos de volta.</p>
             <button class="btn-main" type="button" onclick="testeGeralOnlineSistema()">Teste geral online</button>
+            <button class="btn-light" type="button" onclick="auditarSincronizacaoOnlineSistema()">Auditar sincronização</button>
             <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados completos</button>
             <button class="btn-light" type="button" onclick="baixarPacientesOnlineSistema()">Baixar pacientes</button>
+            <button class="btn-light" type="button" onclick="baixarProntuarioOnlineSistema()">Baixar prontuário</button>
+            <button class="btn-light" type="button" onclick="baixarFotosOnlineSistema()">Baixar fotos</button>
             <button class="btn-light" type="button" onclick="baixarAgendaOnlineSistema()">Baixar agenda</button>
             <button class="btn-light" type="button" onclick="baixarEstoqueOnlineSistema()">Baixar estoque</button>
             <button class="btn-light" type="button" onclick="baixarFinanceiroOnlineSistema()">Baixar financeiro</button>
@@ -13131,6 +13134,85 @@ async function contarTabelaOnlineSistema(tabela){
   if(error) return {tabela,count:null,error:error.message};
   return {tabela,count:count || 0,error:""};
 }
+function areasSincronizacaoOnlineSistema(){
+  return [
+    {label:"Pacientes",tabela:"patients",local:()=>get("pacientes").length},
+    {label:"Anamneses",tabela:"anamneses",local:()=>get("anamnese").length},
+    {label:"Autorizações",tabela:"authorizations",local:()=>get("autorizacoes").length},
+    {label:"Evoluções",tabela:"evolutions",local:()=>get("evolucao").length},
+    {label:"Fotos",tabela:"clinical_photos",local:()=>get("fotos").length},
+    {label:"Agenda",tabela:"appointments",local:()=>get("agenda").length},
+    {label:"Itens do estoque",tabela:"inventory_items",local:()=>get("estoque").length},
+    {label:"Entradas do estoque",tabela:"stock_purchases",local:()=>get("comprasEstoque").length},
+    {label:"Baixas do estoque",tabela:"inventory_movements",local:()=>get("estoqueHistorico").length},
+    {label:"Financeiro",tabela:"financial_entries",local:()=>get("financeiroPro").length},
+    {label:"Cobranças",tabela:"procedure_charges",local:()=>get("cobrancasProntuario").length}
+  ];
+}
+async function validarAcessoOnlineSistema(acao){
+  salvarConfigOnlineRapidoSistema();
+  const online=configOnlineSistema();
+  const db=clienteSupabaseSistema();
+  if(!online.ativo || !db || !online.clinicId) return {ok:false,msg:`Configure e ative a conexão online antes de ${acao}.`};
+  const sessao=await db.auth.getSession();
+  if(!sessao.data.session) return {ok:false,msg:`Entre no acesso online antes de ${acao}.`};
+  return {ok:true,online,db};
+}
+async function auditarSincronizacaoOnlineSistema(){
+  const status=document.getElementById("onlineStatusSistema");
+  const linhas=["Auditoria da sincronização online:","Local = este navegador | Online = banco Supabase"];
+  try{
+    if(status) status.innerText="Comparando dados locais com o banco online...";
+    const acesso=await validarAcessoOnlineSistema("auditar a sincronização");
+    if(!acesso.ok){
+      linhas.push("FALHOU - "+acesso.msg);
+      mostrarDiagnosticoOnlineSistema(linhas);
+      if(status) status.innerText=acesso.msg;
+      return;
+    }
+    let faltandoOnline=0, maiorNoOnline=0, erros=0;
+    for(const area of areasSincronizacaoOnlineSistema()){
+      let local=0;
+      try{local=Number(area.local() || 0);}catch(e){local=0;}
+      const remoto=await contarTabelaOnlineSistema(area.tabela);
+      if(remoto.error){
+        erros++;
+        linhas.push(`FALHOU - ${area.label}: não consegui contar no online (${remoto.error})`);
+        mostrarDiagnosticoOnlineSistema(linhas);
+        continue;
+      }
+      const online=Number(remoto.count || 0);
+      if(online<local){
+        faltandoOnline++;
+        linhas.push(`ATENÇÃO - ${area.label}: local ${local} | online ${online} | falta enviar para o online`);
+      }else if(online>local){
+        maiorNoOnline++;
+        linhas.push(`INFO - ${area.label}: local ${local} | online ${online} | online tem mais registros`);
+      }else{
+        linhas.push(`OK - ${area.label}: local ${local} | online ${online}`);
+      }
+      mostrarDiagnosticoOnlineSistema(linhas);
+    }
+    if(erros){
+      linhas.push("Resultado: auditoria terminou com erro em alguma tabela. Me envie o print desta área.");
+      if(status) status.innerText="Auditoria encontrou erro em alguma tabela online.";
+    }else if(faltandoOnline){
+      linhas.push("Resultado: há dados neste computador que ainda não estão completos no online. Use Enviar tudo para online e rode a auditoria de novo.");
+      if(status) status.innerText="Auditoria encontrou dados locais pendentes de envio.";
+    }else if(maiorNoOnline){
+      linhas.push("Resultado: online funcionando, mas o banco tem mais registros que este navegador. Isso pode ser normal se outro computador enviou dados; use Baixar dados completos se quiser trazer para cá.");
+      if(status) status.innerText="Auditoria concluída: online tem mais dados que este navegador.";
+    }else{
+      linhas.push("Resultado: sincronização conferida. Local e online estão com as mesmas quantidades principais.");
+      if(status) status.innerText="Auditoria concluída: local e online estão batendo.";
+    }
+    mostrarDiagnosticoOnlineSistema(linhas);
+  }catch(e){
+    linhas.push("FALHOU - Auditoria interrompida: "+textoErroOnlineSistema(e));
+    mostrarDiagnosticoOnlineSistema(linhas);
+    if(status) status.innerText="Auditoria interrompida: "+textoErroOnlineSistema(e);
+  }
+}
 async function testeGeralOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   salvarConfigOnlineRapidoSistema();
@@ -13228,8 +13310,11 @@ function inserirPainelPreparacaoOnlineConfig(){
         <h4>3. Baixar / conferir</h4>
         <p>Confere o que está online ou traz dados básicos de volta.</p>
         <button class="btn-main" type="button" onclick="testeGeralOnlineSistema()">Teste geral online</button>
+        <button class="btn-light" type="button" onclick="auditarSincronizacaoOnlineSistema()">Auditar sincronização</button>
         <button class="btn-light" type="button" onclick="baixarTudoBasicoOnlineSistema()">Baixar dados completos</button>
         <button class="btn-light" type="button" onclick="baixarPacientesOnlineSistema()">Baixar pacientes</button>
+        <button class="btn-light" type="button" onclick="baixarProntuarioOnlineSistema()">Baixar prontuário</button>
+        <button class="btn-light" type="button" onclick="baixarFotosOnlineSistema()">Baixar fotos</button>
         <button class="btn-light" type="button" onclick="baixarAgendaOnlineSistema()">Baixar agenda</button>
         <button class="btn-light" type="button" onclick="baixarEstoqueOnlineSistema()">Baixar estoque</button>
         <button class="btn-light" type="button" onclick="baixarFinanceiroOnlineSistema()">Baixar financeiro</button>

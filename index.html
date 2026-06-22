@@ -1809,6 +1809,43 @@ body > #resultadoPacientes{
   flex-wrap:wrap;
   margin-top:16px;
 }
+.backup-alerta-pro{
+  border:1px solid rgba(184,122,71,.28);
+  background:#fff3ea;
+  color:#7d4a2b;
+  border-radius:14px;
+  padding:10px 12px;
+  font-size:13px;
+  line-height:1.45;
+  margin:10px 0 12px;
+}
+.backup-resumo-pro{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0;
+}
+.backup-resumo-item{
+  background:white;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+}
+.backup-resumo-item b{
+  display:block;
+  color:var(--gold);
+  font-size:18px;
+  margin-bottom:2px;
+}
+.backup-resumo-item span{
+  color:var(--muted);
+  font-size:12px;
+}
+.backup-importar-pro{
+  border-color:rgba(170,61,49,.28)!important;
+  color:#8d362c!important;
+  background:#fff6f4!important;
+}
 .online-central-pro{
   margin-top:16px;
   border:1px solid rgba(192,161,106,.42);
@@ -2838,16 +2875,19 @@ body > #resultadoPacientes{
     <div class="box">
       <h2>Configuracoes da clinica</h2>
       <section class="config-card-pro">
-        <h3>Backup e restauracao dos dados</h3>
-        <p>Antes de grandes alteracoes, baixe uma copia dos dados deste navegador. O arquivo pode conter dados sensiveis de pacientes e usuarios.</p>
+        <h3>Backup completo e restauracao segura</h3>
+        <p>Use esta area antes de qualquer mudanca grande. O backup guarda os dados salvos neste navegador, incluindo pacientes, prontuario, agenda, estoque, financeiro, usuarios e configuracoes.</p>
+        <div class="backup-alerta-pro"><b>Atenção:</b> este arquivo pode conter dados sensiveis da clinica e dos pacientes. Guarde em local seguro e nao envie para pessoas sem autorizacao.</div>
+        <div id="backupResumoSistema" class="backup-resumo-pro"></div>
         <div class="config-acoes">
-          <button class="btn-main" type="button" onclick="exportarBackupSistema()">Baixar backup agora</button>
-          <label class="btn-light" style="display:inline-flex;align-items:center;justify-content:center;gap:8px">
-            Importar backup
+          <button class="btn-main" type="button" onclick="exportarBackupSistema()">Baixar backup completo agora</button>
+          <button class="btn-light" type="button" onclick="renderResumoBackupSistema()">Atualizar resumo</button>
+          <label class="btn-light backup-importar-pro" style="display:inline-flex;align-items:center;justify-content:center;gap:8px">
+            Importar backup completo
             <input id="backupArquivoSistema" type="file" accept=".json,application/json" onchange="importarBackupSistema(this)" style="display:none">
           </label>
         </div>
-        <div id="backupStatusSistema" class="msg">Recomendacao: baixe um backup antes de importar outro arquivo.</div>
+        <div id="backupStatusSistema" class="msg">Recomendacao: baixe um backup completo antes de importar outro arquivo.</div>
       </section>
       <div class="form-row"><input id="confClinica" placeholder="Nome da clinica"><input id="confResp" placeholder="Responsavel tecnico"><input id="confWhats" placeholder="WhatsApp"><input id="confInsta" placeholder="Instagram"></div>
       <button class="btn-main" onclick="salvarConfig()">Salvar configuracoes</button>
@@ -4678,16 +4718,19 @@ function montarTelaConfig(){
         <input id="confInsta" placeholder="Instagram">
       </div>
       <section class="config-card-pro">
-        <h3>Backup e restauracao dos dados</h3>
-        <p>Antes de grandes alteracoes, baixe uma copia dos dados deste navegador. O arquivo pode conter dados sensiveis de pacientes e usuarios.</p>
+        <h3>Backup completo e restauracao segura</h3>
+        <p>Use esta area antes de qualquer mudanca grande. O backup guarda os dados salvos neste navegador, incluindo pacientes, prontuario, agenda, estoque, financeiro, usuarios e configuracoes.</p>
+        <div class="backup-alerta-pro"><b>Atenção:</b> este arquivo pode conter dados sensiveis da clinica e dos pacientes. Guarde em local seguro e nao envie para pessoas sem autorizacao.</div>
+        <div id="backupResumoSistema" class="backup-resumo-pro"></div>
         <div class="config-acoes">
-          <button class="btn-main" type="button" onclick="exportarBackupSistema()">Baixar backup agora</button>
-          <label class="btn-light" style="display:inline-flex;align-items:center;justify-content:center;gap:8px">
-            Importar backup
+          <button class="btn-main" type="button" onclick="exportarBackupSistema()">Baixar backup completo agora</button>
+          <button class="btn-light" type="button" onclick="renderResumoBackupSistema()">Atualizar resumo</button>
+          <label class="btn-light backup-importar-pro" style="display:inline-flex;align-items:center;justify-content:center;gap:8px">
+            Importar backup completo
             <input id="backupArquivoSistema" type="file" accept=".json,application/json" onchange="importarBackupSistema(this)" style="display:none">
           </label>
         </div>
-        <div id="backupStatusSistema" class="msg">Recomendacao: baixe um backup antes de importar outro arquivo.</div>
+        <div id="backupStatusSistema" class="msg">Recomendacao: baixe um backup completo antes de importar outro arquivo.</div>
       </section>
       <section id="painelPreparacaoOnline" class="config-card-pro online-central-pro">
         <h3>Central online do sistema</h3>
@@ -4773,6 +4816,7 @@ function renderConfig(){
   if(insta) insta.value = conf.insta || "";
   renderConfigProfissionais(conf.profissionais || []);
   renderConfigUsuarios(conf.usuarios || []);
+  renderResumoBackupSistema();
 }
 
 function adicionarProfissionalConfig(nome="", cargo=""){
@@ -4907,39 +4951,102 @@ function chavesBackupSistema(){
   return Object.keys(localStorage).filter(k=>k.startsWith("gepV2_")).sort();
 }
 
+function nomeAmigavelBackupSistema(chave){
+  const mapa={
+    gepV2_pacientes:"Pacientes",
+    gepV2_agenda:"Agenda",
+    gepV2_autorizacoes:"Autorizações",
+    gepV2_fotos:"Fotos",
+    gepV2_estoque:"Estoque",
+    gepV2_comprasEstoque:"Entradas do estoque",
+    gepV2_baixasEstoque:"Baixas do estoque",
+    gepV2_financeiro:"Financeiro",
+    gepV2_cobrancas:"Cobranças",
+    gepV2_anamneses:"Anamneses",
+    gepV2_evolucoes:"Evoluções",
+    gepV2_config:"Configurações",
+    gepV2_teste:"Teste"
+  };
+  return mapa[chave] || chave.replace(/^gepV2_/,"").replace(/([A-Z])/g," $1").trim();
+}
+
+function contarValorBackupSistema(valor){
+  try{
+    const dados=JSON.parse(valor || "null");
+    if(Array.isArray(dados)) return dados.length;
+    if(dados && typeof dados==="object") return Object.keys(dados).length;
+    return valor ? 1 : 0;
+  }catch(e){
+    return valor ? 1 : 0;
+  }
+}
+
+function resumoBackupSistema(dados){
+  const fonte=dados || dadosBackupSistema().dados;
+  const chaves=Object.keys(fonte || {}).filter(k=>k.startsWith("gepV2_"));
+  const itens=chaves.map(chave=>({
+    chave,
+    nome:nomeAmigavelBackupSistema(chave),
+    quantidade:contarValorBackupSistema(fonte[chave]),
+    tamanho:String(fonte[chave] || "").length
+  }));
+  const totalRegistros=itens.reduce((s,x)=>s+x.quantidade,0);
+  const totalTamanho=itens.reduce((s,x)=>s+x.tamanho,0);
+  return {itens,totalAreas:itens.length,totalRegistros,totalTamanho};
+}
+
+function renderResumoBackupSistema(){
+  const area=document.getElementById("backupResumoSistema");
+  if(!area) return;
+  const resumo=resumoBackupSistema();
+  const principais=["gepV2_pacientes","gepV2_agenda","gepV2_fotos","gepV2_financeiro"];
+  const cards=principais.map(chave=>{
+    const item=resumo.itens.find(x=>x.chave===chave) || {nome:nomeAmigavelBackupSistema(chave),quantidade:0};
+    return `<div class="backup-resumo-item"><b>${Number(item.quantidade || 0)}</b><span>${escapeHtmlText(item.nome)}</span></div>`;
+  }).join("");
+  area.innerHTML=cards+`<div class="backup-resumo-item"><b>${resumo.totalAreas}</b><span>Áreas salvas</span></div><div class="backup-resumo-item"><b>${resumo.totalRegistros}</b><span>Registros estimados</span></div>`;
+  const status=document.getElementById("backupStatusSistema");
+  if(status) status.innerText=`Resumo atualizado: ${resumo.totalAreas} area(s), ${resumo.totalRegistros} registro(s) estimados.`;
+}
+
 function dadosBackupSistema(){
   const dados = {};
   chavesBackupSistema().forEach(k=>{
     dados[k] = localStorage.getItem(k);
   });
+  const resumo=resumoBackupSistema(dados);
   return {
-    versaoBackup:"gestao-estetica-pro-v1",
+    versaoBackup:"gestao-estetica-pro-v2",
     data:new Date().toISOString(),
     origem:"Gestao Estetica Pro",
+    tipo:"backup-completo-local",
+    resumo,
     dados
   };
 }
 
-function nomeArquivoBackupSistema(){
+function nomeArquivoBackupSistema(tipo="completo"){
   const data = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
   const clinica = (configSistema().clinica || "clinica").replace(/[^\w\-]+/g,"_").slice(0,40) || "clinica";
-  return `backup_gestao_estetica_${clinica}_${data}.json`;
+  const sufixo=String(tipo || "completo").replace(/[^\w\-]+/g,"_").slice(0,30) || "completo";
+  return `backup_${sufixo}_gestao_estetica_${clinica}_${data}.json`;
 }
 
-function exportarBackupSistema(){
+function exportarBackupSistema(tipo="completo"){
   try{
     const payload = dadosBackupSistema();
     const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = nomeArquivoBackupSistema();
+    link.download = nomeArquivoBackupSistema(tipo);
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
     const status = document.getElementById("backupStatusSistema");
-    if(status) status.innerText = `Backup gerado com ${Object.keys(payload.dados).length} area(s) de dados.`;
+    if(status) status.innerText = `Backup completo gerado com ${payload.resumo.totalAreas} area(s) e ${payload.resumo.totalRegistros} registro(s) estimados.`;
+    renderResumoBackupSistema();
   }catch(e){
     console.error(e);
     alert("Nao foi possivel gerar o backup.");
@@ -4963,11 +5070,18 @@ function importarBackupSistema(input){
         return;
       }
       const dataBackup = payload.data ? new Date(payload.data).toLocaleString("pt-BR") : "data nao informada";
-      const confirmar = confirm(`Importar backup de ${dataBackup}?\n\nIsso vai substituir os dados atuais deste navegador. Antes de continuar, tenha certeza de que ja baixou um backup atual.`);
+      const resumo=resumoBackupSistema(payload.dados);
+      const confirmar = confirm(`Importar backup completo de ${dataBackup}?\n\nEste arquivo tem ${resumo.totalAreas} area(s) e ${resumo.totalRegistros} registro(s) estimados.\n\nATENCAO: isso vai substituir os dados atuais deste navegador. O sistema vai baixar uma copia de seguranca antes de importar.`);
       if(!confirmar) return;
+      const palavra=prompt('Para confirmar a importacao, digite IMPORTAR em letras maiusculas.');
+      if(palavra!=="IMPORTAR"){
+        alert("Importacao cancelada. Nenhum dado foi alterado.");
+        return;
+      }
+      exportarBackupSistema("antes_da_importacao");
       chaves.forEach(k=>localStorage.setItem(k,String(payload.dados[k] ?? "")));
       const status = document.getElementById("backupStatusSistema");
-      if(status) status.innerText = `Backup importado com ${chaves.length} area(s) de dados. Recarregue a pagina se algo nao atualizar automaticamente.`;
+      if(status) status.innerText = `Backup importado com ${chaves.length} area(s) de dados. Uma copia de seguranca anterior foi baixada antes da importacao.`;
       try{atualizarTudo();renderConfig();}catch(e){}
       alert("Backup importado com sucesso.");
     }catch(e){

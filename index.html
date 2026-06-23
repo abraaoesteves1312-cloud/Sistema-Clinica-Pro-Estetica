@@ -12659,31 +12659,79 @@ function evolucaoOnlineParaLocalSistema(x){
 }
 async function baixarProntuarioOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  salvarConfigOnlineRapidoSistema();
-  const online=configOnlineSistema();
-  const db=clienteSupabaseSistema();
-  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar prontuário.";return;}
-  const sessao=await db.auth.getSession();
-  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar prontuário.";return;}
-  if(msg) msg.innerText="Baixando prontuário online...";
-  const anamneses=await db.from("anamneses").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("record_date",{ascending:true});
-  if(anamneses.error){if(msg) msg.innerText="Não foi possível baixar anamneses: "+anamneses.error.message;return;}
-  const autorizacoes=await db.from("authorizations").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("authorization_date",{ascending:true});
-  if(autorizacoes.error){if(msg) msg.innerText="Não foi possível baixar autorizações: "+autorizacoes.error.message;return;}
-  const evolucoes=await db.from("evolutions").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("evolution_date",{ascending:true});
-  if(evolucoes.error){if(msg) msg.innerText="Não foi possível baixar evoluções: "+evolucoes.error.message;return;}
-  const mapaAna=new Map(get("anamnese").map(x=>[String(x.id),x]));
-  (anamneses.data || []).forEach(x=>mapaAna.set(String(x.local_id || x.id),anamneseOnlineParaLocalSistema(x)));
-  set("anamnese",[...mapaAna.values()]);
-  const mapaAut=new Map(get("autorizacoes").map(x=>[String(x.id),x]));
-  (autorizacoes.data || []).forEach(x=>mapaAut.set(String(x.local_id || x.id),autorizacaoOnlineParaLocalSistema(x)));
-  set("autorizacoes",[...mapaAut.values()]);
-  const mapaEvo=new Map(get("evolucao").map(x=>[String(x.id),x]));
-  (evolucoes.data || []).forEach(x=>mapaEvo.set(String(x.local_id || x.id),evolucaoOnlineParaLocalSistema(x)));
-  set("evolucao",[...mapaEvo.values()]);
-  atualizarTudo();
-  const total=(anamneses.data || []).length+(autorizacoes.data || []).length+(evolucoes.data || []).length;
-  if(msg) msg.innerText=`${total} registro(s) de prontuário baixados do online.`;
+  const linhas=["Baixa do prontuário online:"];
+  const avisar=(texto)=>{
+    linhas.push(texto);
+    if(msg) msg.innerText=texto;
+    mostrarDiagnosticoOnlineSistema(linhas);
+  };
+  try{
+    salvarConfigOnlineRapidoSistema();
+    const online=configOnlineSistema();
+    const db=clienteSupabaseSistema();
+    if(!online.ativo || !db || !online.clinicId){
+      avisar("Configure e ative a conexão online antes de baixar prontuário.");
+      return false;
+    }
+    const sessao=await promessaComTempoSistema(db.auth.getSession(),"Verificação do login online",12);
+    if(!sessao.data.session){
+      avisar("Entre no acesso online antes de baixar prontuário.");
+      return false;
+    }
+    avisar("Baixando anamneses online...");
+    const anamneses=await consultaOnlineComTempoSistema(
+      db.from("anamneses").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("record_date",{ascending:true}),
+      "Baixa de anamneses online",
+      18
+    );
+    if(anamneses.error){
+      avisar("Não foi possível baixar anamneses: "+anamneses.error.message);
+      return false;
+    }
+    avisar(`OK - Anamneses baixadas: ${(anamneses.data || []).length}`);
+
+    avisar("Baixando autorizações online...");
+    const autorizacoes=await consultaOnlineComTempoSistema(
+      db.from("authorizations").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("authorization_date",{ascending:true}),
+      "Baixa de autorizações online",
+      18
+    );
+    if(autorizacoes.error){
+      avisar("Não foi possível baixar autorizações: "+autorizacoes.error.message);
+      return false;
+    }
+    avisar(`OK - Autorizações baixadas: ${(autorizacoes.data || []).length}`);
+
+    avisar("Baixando evoluções online...");
+    const evolucoes=await consultaOnlineComTempoSistema(
+      db.from("evolutions").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("evolution_date",{ascending:true}),
+      "Baixa de evoluções online",
+      18
+    );
+    if(evolucoes.error){
+      avisar("Não foi possível baixar evoluções: "+evolucoes.error.message);
+      return false;
+    }
+    avisar(`OK - Evoluções baixadas: ${(evolucoes.data || []).length}`);
+
+    const mapaAna=new Map(get("anamnese").map(x=>[String(x.id),x]));
+    (anamneses.data || []).forEach(x=>mapaAna.set(String(x.local_id || x.id),anamneseOnlineParaLocalSistema(x)));
+    set("anamnese",[...mapaAna.values()]);
+    const mapaAut=new Map(get("autorizacoes").map(x=>[String(x.id),x]));
+    (autorizacoes.data || []).forEach(x=>mapaAut.set(String(x.local_id || x.id),autorizacaoOnlineParaLocalSistema(x)));
+    set("autorizacoes",[...mapaAut.values()]);
+    const mapaEvo=new Map(get("evolucao").map(x=>[String(x.id),x]));
+    (evolucoes.data || []).forEach(x=>mapaEvo.set(String(x.local_id || x.id),evolucaoOnlineParaLocalSistema(x)));
+    set("evolucao",[...mapaEvo.values()]);
+    try{atualizarTudo();}catch(e){console.warn("Atualização visual após baixar prontuário falhou:",e);}
+    const total=(anamneses.data || []).length+(autorizacoes.data || []).length+(evolucoes.data || []).length;
+    avisar(`${total} registro(s) de prontuário baixados do online.`);
+    return true;
+  }catch(e){
+    const erro=textoErroOnlineSistema(e);
+    avisar("Não foi possível concluir a baixa do prontuário: "+erro);
+    return false;
+  }
 }
 function dataUrlParaBlobSistema(dataUrl){
   const partes=String(dataUrl || "").split(",");
@@ -13259,7 +13307,11 @@ async function baixarTudoBasicoOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   if(msg) msg.innerText="Baixando dados completos do online. Aguarde...";
   await baixarPacientesOnlineSistema();
-  await baixarProntuarioOnlineSistema();
+  const prontuarioOk=await baixarProntuarioOnlineSistema();
+  if(prontuarioOk===false){
+    if(msg) msg.innerText="Baixa interrompida no prontuário. Veja o diagnóstico e tente baixar o prontuário novamente.";
+    return;
+  }
   await baixarFotosOnlineSistema();
   await baixarAgendaOnlineSistema();
   await baixarEstoqueOnlineSistema();

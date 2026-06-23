@@ -12678,40 +12678,61 @@ async function baixarProntuarioOnlineSistema(){
       avisar("Entre no acesso online antes de baixar prontuário.");
       return false;
     }
+    avisar("Buscando nomes dos pacientes online...");
+    const pacientesOnline=await consultaOnlineComTempoSistema(
+      db.from("patients").select("id,full_name").eq("clinic_id",online.clinicId),
+      "Busca de nomes dos pacientes online",
+      20
+    );
+    if(pacientesOnline.error){
+      avisar("Não foi possível buscar nomes dos pacientes: "+pacientesOnline.error.message);
+      return false;
+    }
+    const nomesPorPacienteId=new Map((pacientesOnline.data || []).map(p=>[String(p.id),p.full_name || ""]));
+    const aplicarNomePaciente=(lista)=>{
+      (lista || []).forEach(item=>{
+        if(!item.patients) item.patients={};
+        if(!item.patients.full_name) item.patients.full_name=nomesPorPacienteId.get(String(item.patient_id || "")) || "";
+      });
+      return lista || [];
+    };
     avisar("Baixando anamneses online...");
     const anamneses=await consultaOnlineComTempoSistema(
-      db.from("anamneses").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("record_date",{ascending:true}),
+      db.from("anamneses").select("*").eq("clinic_id",online.clinicId).order("record_date",{ascending:true}),
       "Baixa de anamneses online",
-      18
+      30
     );
     if(anamneses.error){
       avisar("Não foi possível baixar anamneses: "+anamneses.error.message);
       return false;
     }
+    aplicarNomePaciente(anamneses.data);
     avisar(`OK - Anamneses baixadas: ${(anamneses.data || []).length}`);
 
-    avisar("Baixando autorizações online...");
+    avisar("Baixando autorizações online... Pode demorar um pouco por causa das assinaturas digitais.");
     const autorizacoes=await consultaOnlineComTempoSistema(
-      db.from("authorizations").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("authorization_date",{ascending:true}),
+      db.from("authorizations").select("*").eq("clinic_id",online.clinicId).order("authorization_date",{ascending:true}),
       "Baixa de autorizações online",
-      18
+      60
     );
     if(autorizacoes.error){
       avisar("Não foi possível baixar autorizações: "+autorizacoes.error.message);
       return false;
     }
+    aplicarNomePaciente(autorizacoes.data);
     avisar(`OK - Autorizações baixadas: ${(autorizacoes.data || []).length}`);
 
     avisar("Baixando evoluções online...");
     const evolucoes=await consultaOnlineComTempoSistema(
-      db.from("evolutions").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("evolution_date",{ascending:true}),
+      db.from("evolutions").select("*").eq("clinic_id",online.clinicId).order("evolution_date",{ascending:true}),
       "Baixa de evoluções online",
-      18
+      30
     );
     if(evolucoes.error){
       avisar("Não foi possível baixar evoluções: "+evolucoes.error.message);
       return false;
     }
+    aplicarNomePaciente(evolucoes.data);
     avisar(`OK - Evoluções baixadas: ${(evolucoes.data || []).length}`);
 
     const mapaAna=new Map(get("anamnese").map(x=>[String(x.id),x]));

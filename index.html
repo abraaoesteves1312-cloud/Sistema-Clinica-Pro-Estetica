@@ -12917,21 +12917,62 @@ async function enviarAgendaOnlineSistema(){
 }
 async function baixarAgendaOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  salvarConfigOnlineRapidoSistema();
-  const online=configOnlineSistema();
-  const db=clienteSupabaseSistema();
-  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar agenda.";return;}
-  const sessao=await db.auth.getSession();
-  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar agenda.";return;}
-  if(msg) msg.innerText="Baixando agenda online...";
-  const {data,error}=await db.from("appointments").select("*,patients(full_name)").eq("clinic_id",online.clinicId).order("appointment_date",{ascending:true}).order("start_time",{ascending:true});
-  if(error){if(msg) msg.innerText="Não foi possível baixar agenda: "+error.message;return;}
-  const locais=get("agenda");
-  const mapa=new Map(locais.map(x=>[String(x.id),x]));
-  (data || []).forEach(x=>mapa.set(String(x.local_id || x.id),agendaOnlineParaLocalSistema(x)));
-  set("agenda",[...mapa.values()]);
-  atualizarTudo();
-  if(msg) msg.innerText=`${(data || []).length} registro(s) da agenda baixados do online.`;
+  const linhas=["Baixa da agenda online:"];
+  const avisar=(texto)=>{
+    linhas.push(texto);
+    if(msg) msg.innerText=texto;
+    mostrarDiagnosticoOnlineSistema(linhas);
+  };
+  try{
+    salvarConfigOnlineRapidoSistema();
+    const online=configOnlineSistema();
+    const db=clienteSupabaseSistema();
+    if(!online.ativo || !db || !online.clinicId){
+      avisar("Configure e ative a conexão online antes de baixar agenda.");
+      return false;
+    }
+    const sessao=await promessaComTempoSistema(db.auth.getSession(),"Verificação do login online",12);
+    if(!sessao.data.session){
+      avisar("Entre no acesso online antes de baixar agenda.");
+      return false;
+    }
+    avisar("Buscando nomes dos pacientes online para a agenda...");
+    const pacientesOnline=await consultaOnlineComTempoSistema(
+      db.from("patients").select("id,full_name").eq("clinic_id",online.clinicId),
+      "Busca de nomes dos pacientes da agenda",
+      20
+    );
+    if(pacientesOnline.error){
+      avisar("Não foi possível buscar nomes dos pacientes da agenda: "+pacientesOnline.error.message);
+      return false;
+    }
+    const nomesPorPacienteId=new Map((pacientesOnline.data || []).map(p=>[String(p.id),p.full_name || ""]));
+    avisar("Baixando agenda online...");
+    const resposta=await consultaOnlineComTempoSistema(
+      db.from("appointments").select("*").eq("clinic_id",online.clinicId).order("appointment_date",{ascending:true}).order("start_time",{ascending:true}),
+      "Baixa da agenda online",
+      30
+    );
+    if(resposta.error){
+      avisar("Não foi possível baixar agenda: "+resposta.error.message);
+      return false;
+    }
+    const data=resposta.data || [];
+    data.forEach(x=>{
+      if(!x.patients) x.patients={};
+      if(!x.patients.full_name) x.patients.full_name=nomesPorPacienteId.get(String(x.patient_id || "")) || "";
+    });
+    const locais=get("agenda");
+    const mapa=new Map(locais.map(x=>[String(x.id),x]));
+    data.forEach(x=>mapa.set(String(x.local_id || x.id),agendaOnlineParaLocalSistema(x)));
+    set("agenda",[...mapa.values()]);
+    try{atualizarTudo();}catch(e){console.warn("Atualização visual após baixar agenda falhou:",e);}
+    avisar(`${data.length} registro(s) da agenda baixados do online.`);
+    return true;
+  }catch(e){
+    avisar("Não foi possível concluir a baixa da agenda: "+textoErroOnlineSistema(e));
+    return false;
+  }
 }
 function itemEstoqueParaOnlineSistema(item){
   return {
@@ -13334,7 +13375,11 @@ async function baixarTudoBasicoOnlineSistema(){
     return;
   }
   await baixarFotosOnlineSistema();
-  await baixarAgendaOnlineSistema();
+  const agendaOk=await baixarAgendaOnlineSistema();
+  if(agendaOk===false){
+    if(msg) msg.innerText="Baixa interrompida na agenda. Veja o diagnóstico e tente baixar a agenda novamente.";
+    return;
+  }
   await baixarEstoqueOnlineSistema();
   await baixarFinanceiroOnlineSistema();
   atualizarTudo();

@@ -13078,31 +13078,125 @@ async function enviarEstoqueOnlineSistema(){
 }
 async function baixarEstoqueOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  salvarConfigOnlineRapidoSistema();
-  const online=configOnlineSistema();
-  const db=clienteSupabaseSistema();
-  if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de baixar estoque.";return;}
-  const sessao=await db.auth.getSession();
-  if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de baixar estoque.";return;}
-  if(msg) msg.innerText="Baixando estoque online...";
-  const itens=await db.from("inventory_items").select("*").eq("clinic_id",online.clinicId).order("name");
-  if(itens.error){if(msg) msg.innerText="Não foi possível baixar estoque: "+itens.error.message;return;}
-  const locais=get("estoque");
-  const mapa=new Map(locais.map(x=>[String(x.id),x]));
-  (itens.data || []).forEach(x=>mapa.set(String(x.local_id || x.id),{
-    id:x.local_id || x.id,
-    nome:x.name || "",
-    classe:x.class || "",
-    un:x.unit || "unidade",
-    lote:x.lot || "",
-    validade:x.expiration_date || "",
-    qtd:Number(x.quantity || 0),
-    min:Number(x.minimum_quantity || 0),
-    custo:Number(x.unit_cost || 0)
-  }));
-  set("estoque",[...mapa.values()]);
-  atualizarTudo();
-  if(msg) msg.innerText=`${(itens.data || []).length} item(ns) de estoque baixados do online.`;
+  const linhas=["Baixa do estoque online:"];
+  const avisar=(texto)=>{
+    linhas.push(texto);
+    if(msg) msg.innerText=texto;
+    mostrarDiagnosticoOnlineSistema(linhas);
+  };
+  try{
+    salvarConfigOnlineRapidoSistema();
+    const online=configOnlineSistema();
+    const db=clienteSupabaseSistema();
+    if(!online.ativo || !db || !online.clinicId){
+      avisar("Configure e ative a conexão online antes de baixar estoque.");
+      return false;
+    }
+    const sessao=await promessaComTempoSistema(db.auth.getSession(),"Verificação do login online",12);
+    if(!sessao.data.session){
+      avisar("Entre no acesso online antes de baixar estoque.");
+      return false;
+    }
+
+    avisar("Baixando itens do estoque online...");
+    const itens=await consultaOnlineComTempoSistema(
+      db.from("inventory_items").select("id,local_id,name,class,unit,lot,expiration_date,quantity,minimum_quantity,unit_cost").eq("clinic_id",online.clinicId).order("name"),
+      "Baixa dos itens do estoque",
+      40
+    );
+    if(itens.error){
+      avisar("Não foi possível baixar os itens do estoque: "+itens.error.message);
+      return false;
+    }
+    const locais=get("estoque");
+    const mapa=new Map(locais.map(x=>[String(x.id),x]));
+    const nomesPorItemOnline=new Map();
+    (itens.data || []).forEach(x=>{
+      const localId=String(x.local_id || x.id);
+      nomesPorItemOnline.set(String(x.id),{id:localId,nome:x.name || "",classe:x.class || ""});
+      mapa.set(localId,{
+        id:x.local_id || x.id,
+        nome:x.name || "",
+        classe:x.class || "",
+        un:x.unit || "unidade",
+        lote:x.lot || "",
+        validade:x.expiration_date || "",
+        qtd:Number(x.quantity || 0),
+        min:Number(x.minimum_quantity || 0),
+        custo:Number(x.unit_cost || 0)
+      });
+    });
+    set("estoque",[...mapa.values()]);
+    avisar(`OK - ${mapa.size} item(ns) de estoque disponíveis.`);
+
+    avisar("Baixando entradas do estoque online...");
+    const compras=await consultaOnlineComTempoSistema(
+      db.from("stock_purchases").select("*").eq("clinic_id",online.clinicId).order("purchase_date",{ascending:true}),
+      "Baixa das entradas do estoque",
+      25
+    );
+    if(compras.error){
+      avisar("Não foi possível baixar as entradas do estoque: "+compras.error.message);
+      return false;
+    }
+    const comprasLocais=get("comprasEstoque");
+    const mapaCompras=new Map(comprasLocais.map(x=>[String(x.id),x]));
+    (compras.data || []).forEach(x=>{
+      const itemRef=nomesPorItemOnline.get(String(x.item_id || "")) || {};
+      mapaCompras.set(String(x.local_id || x.id),{
+        id:x.local_id || x.id,
+        data:x.purchase_date || "",
+        itemId:x.local_item_id || itemRef.id || "",
+        item:itemRef.nome || "",
+        classe:itemRef.classe || "",
+        qtd:Number(x.quantity || 0),
+        unidade:x.unit || "",
+        valor:Number(x.total_value || 0),
+        custoUnitario:Number(x.unit_cost || 0),
+        fornecedor:x.supplier || "",
+        obs:x.notes || "",
+        lote:x.lot || ""
+      });
+    });
+    set("comprasEstoque",[...mapaCompras.values()]);
+    avisar(`OK - ${(compras.data || []).length} entrada(s) recebida(s).`);
+
+    avisar("Baixando baixas do estoque online...");
+    const movimentos=await consultaOnlineComTempoSistema(
+      db.from("inventory_movements").select("*").eq("clinic_id",online.clinicId).order("movement_date",{ascending:true}),
+      "Baixa do histórico de estoque",
+      25
+    );
+    if(movimentos.error){
+      avisar("Não foi possível baixar o histórico do estoque: "+movimentos.error.message);
+      return false;
+    }
+    const movimentosLocais=get("estoqueHistorico");
+    const mapaMovimentos=new Map(movimentosLocais.map(x=>[String(x.id),x]));
+    (movimentos.data || []).forEach(x=>{
+      const itemRef=nomesPorItemOnline.get(String(x.item_id || "")) || {};
+      mapaMovimentos.set(String(x.local_id || x.id),{
+        id:x.local_id || x.id,
+        data:x.movement_date || "",
+        paciente:"",
+        procedimento:x.procedure_name || "",
+        itemId:x.local_item_id || itemRef.id || "",
+        item:itemRef.nome || "",
+        qtd:Number(x.quantity || 0),
+        unidade:x.unit || "",
+        custo:Number(x.cost || 0),
+        origem:x.source || "",
+        obs:x.notes || ""
+      });
+    });
+    set("estoqueHistorico",[...mapaMovimentos.values()]);
+    try{atualizarTudo();}catch(e){console.warn("Atualização visual após baixar estoque falhou:",e);}
+    avisar(`Estoque concluído: ${mapa.size} item(ns), ${(compras.data || []).length} entrada(s) e ${(movimentos.data || []).length} baixa(s) recebida(s).`);
+    return true;
+  }catch(e){
+    avisar("Não foi possível concluir a baixa do estoque: "+textoErroOnlineSistema(e));
+    return false;
+  }
 }
 function financeiroParaOnlineSistema(x,patientId){
   return {
@@ -13380,7 +13474,11 @@ async function baixarTudoBasicoOnlineSistema(){
     if(msg) msg.innerText="Baixa interrompida na agenda. Veja o diagnóstico e tente baixar a agenda novamente.";
     return;
   }
-  await baixarEstoqueOnlineSistema();
+  const estoqueOk=await baixarEstoqueOnlineSistema();
+  if(estoqueOk===false){
+    if(msg) msg.innerText="Baixa interrompida no estoque. Veja o diagnóstico e tente baixar o estoque novamente.";
+    return;
+  }
   await baixarFinanceiroOnlineSistema();
   atualizarTudo();
   if(msg) msg.innerText="Baixa completa concluída: pacientes, prontuário, fotos, agenda, estoque e financeiro.";

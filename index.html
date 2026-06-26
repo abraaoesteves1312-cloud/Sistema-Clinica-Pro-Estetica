@@ -1901,6 +1901,64 @@ body > #resultadoPacientes{
   background:#edf8ef;
   color:#28733b;
 }
+.plano-comercial-status.alerta{
+  background:#fff4d8;
+  color:#8a5c12;
+}
+.plano-comercial-status.bloqueado{
+  background:#fdebec;
+  color:#9b1c26;
+}
+.plano-admin-card{
+  margin-top:12px;
+  padding:12px;
+  border:1px dashed rgba(184,122,71,.38);
+  border-radius:16px;
+  background:rgba(255,255,255,.72);
+}
+.plano-admin-card h4{
+  margin:0 0 6px;
+  color:var(--gold);
+  font-size:14px;
+}
+.plano-admin-card p{
+  margin:0 0 10px;
+  font-size:12px;
+}
+.plano-admin-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.plano-admin-grid label{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.plano-admin-grid select,
+.plano-admin-grid input{
+  width:100%;
+  min-height:42px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px;
+  background:white;
+  color:var(--text);
+  font:inherit;
+  text-transform:none;
+  letter-spacing:0;
+}
+.plano-admin-acoes{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:10px;
+}
 .online-central-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
@@ -1934,6 +1992,7 @@ body > #resultadoPacientes{
   .config-acessos-grid,
   .online-central-grid{grid-template-columns:1fr}
   .plano-comercial-resumo{grid-template-columns:1fr 1fr}
+  .plano-admin-grid{grid-template-columns:1fr}
 }
 
 </style>
@@ -4844,6 +4903,47 @@ function montarTelaConfig(){
         <div id="planoAssinaturaMensagemSistema" class="msg">Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.</div>
         <div class="config-acoes">
           <button class="btn-light" type="button" onclick="carregarPlanoClinicaOnlineSistema(true)">Atualizar situação do plano</button>
+        </div>
+        <div class="plano-admin-card" id="planoAdminClinicaSistema">
+          <h4>Administrar plano desta clinica</h4>
+          <p>Defina aqui o plano comercial da clinica. Nesta etapa o sistema organiza o controle; o bloqueio automatico fica para a proxima fase.</p>
+          <div class="plano-admin-grid">
+            <label>Plano
+              <select id="adminPlanoSelectSistema">
+                <option value="">Carregar planos...</option>
+              </select>
+            </label>
+            <label>Cobranca
+              <select id="adminPlanoCicloSistema">
+                <option value="monthly">Mensal</option>
+                <option value="yearly">Anual</option>
+              </select>
+            </label>
+            <label>Situacao
+              <select id="adminPlanoStatusSistema">
+                <option value="trialing">Teste</option>
+                <option value="active">Ativo</option>
+                <option value="past_due">Pagamento pendente</option>
+                <option value="grace">Prazo de regularizacao</option>
+                <option value="suspended">Suspenso</option>
+                <option value="canceled">Cancelado</option>
+              </select>
+            </label>
+            <label>Fim do periodo
+              <input id="adminPlanoDataFimSistema" type="date">
+            </label>
+            <label>Fim do teste
+              <input id="adminPlanoTesteFimSistema" type="date">
+            </label>
+            <label>Fim da tolerancia
+              <input id="adminPlanoCarenciaFimSistema" type="date">
+            </label>
+          </div>
+          <div class="plano-admin-acoes">
+            <button class="btn-light" type="button" onclick="carregarAdminPlanoClinicaSistema(true)">Carregar dados do plano</button>
+            <button class="btn-main" type="button" onclick="salvarAdminPlanoClinicaSistema()">Salvar plano da clinica</button>
+          </div>
+          <div id="adminPlanoStatusMensagemSistema" class="msg">Entre online para administrar o plano.</div>
         </div>
       </section>
       <div class="config-grid-pro">
@@ -12334,8 +12434,11 @@ function atualizarPainelPlanoComercialSistema(dados={}){
   if(plano) plano.innerText=textoPlanoComercialSistema(dados.plano,"Estrutura ainda não instalada");
   if(ciclo) ciclo.innerText=rotuloCicloPlanoSistema(dados.ciclo);
   if(status){
+    const statusValor=String(dados.status || "").toLowerCase();
     status.innerText=rotuloStatusPlanoSistema(dados.status);
-    status.classList.toggle("ativo",["active","trialing"].includes(String(dados.status || "").toLowerCase()));
+    status.classList.toggle("ativo",["active","trialing"].includes(statusValor));
+    status.classList.toggle("alerta",["past_due","grace"].includes(statusValor));
+    status.classList.toggle("bloqueado",["suspended","canceled"].includes(statusValor));
   }
   if(mensagem){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
@@ -12384,7 +12487,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
 
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")
-        .select("status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
+        .select("plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
         .eq("clinic_id",perfil.clinic_id)
         .maybeSingle(),
       "Consulta da assinatura",
@@ -12421,7 +12524,146 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     return false;
   }
 }
+let planosComerciaisCacheSistema=[];
+function valorDataInputPlanoSistema(valor){
+  if(!valor) return "";
+  const data=new Date(valor);
+  if(Number.isNaN(data.getTime())) return "";
+  return data.toISOString().slice(0,10);
+}
+function valorIsoFimDiaPlanoSistema(valor){
+  const texto=String(valor || "").trim();
+  if(!texto) return null;
+  const data=new Date(texto+"T23:59:59");
+  if(Number.isNaN(data.getTime())) return null;
+  return data.toISOString();
+}
+function usuarioPodeAdministrarPlanoSistema(perfil){
+  const role=String(perfil?.role || "").toLowerCase();
+  return ["admin","administrator","administrador","owner","proprietario","proprietário"].includes(role);
+}
+function preencherSelectPlanosComerciaisSistema(planos,selecionadoId=""){
+  const select=document.getElementById("adminPlanoSelectSistema");
+  if(!select) return;
+  const lista=(planos || []).filter(p=>p && p.id);
+  if(!lista.length){
+    select.innerHTML='<option value="">Nenhum plano encontrado</option>';
+    return;
+  }
+  select.innerHTML=lista.map(p=>{
+    const selecionado=String(p.id)===String(selecionadoId) ? " selected" : "";
+    const nome=escapeHtmlText(p.name || p.code || "Plano");
+    return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${nome}</option>`;
+  }).join("");
+}
+async function buscarPerfilPlanoAdminSistema(db){
+  const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
+  const sessao=sessaoResp?.data?.session;
+  if(!sessao) throw new Error("Entre no acesso online antes de administrar o plano.");
+  const perfilResp=await consultaOnlineComTempoSistema(
+    db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle(),
+    "Consulta do perfil da clínica",
+    20
+  );
+  if(perfilResp.error) throw perfilResp.error;
+  const perfil=perfilResp.data;
+  if(!perfil?.clinic_id) throw new Error("Este usuário ainda não está vinculado a uma clínica online.");
+  if(!usuarioPodeAdministrarPlanoSistema(perfil)) throw new Error("Somente administrador pode alterar o plano da clínica.");
+  return {sessao,perfil};
+}
+async function carregarAdminPlanoClinicaSistema(mostrarAviso=false){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminPlanoStatusMensagemSistema");
+  if(!db){
+    if(msg) msg.innerText="Conecte o sistema ao Supabase antes de administrar o plano.";
+    return false;
+  }
+  try{
+    if(msg) msg.innerText="Carregando planos e assinatura...";
+    const {perfil}=await buscarPerfilPlanoAdminSistema(db);
+    const planosResp=await consultaOnlineComTempoSistema(
+      db.from("commercial_plans").select("id,code,name,active").eq("active",true).order("name"),
+      "Consulta dos planos comerciais",
+      20
+    );
+    if(planosResp.error) throw planosResp.error;
+    planosComerciaisCacheSistema=planosResp.data || [];
+    const assinaturaResp=await consultaOnlineComTempoSistema(
+      db.from("clinic_subscriptions").select("id,clinic_id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at").eq("clinic_id",perfil.clinic_id).maybeSingle(),
+      "Consulta da assinatura da clínica",
+      20
+    );
+    if(assinaturaResp.error) throw assinaturaResp.error;
+    const assinatura=assinaturaResp.data || {};
+    preencherSelectPlanosComerciaisSistema(planosComerciaisCacheSistema, assinatura.plan_id || planosComerciaisCacheSistema[0]?.id || "");
+    const ciclo=document.getElementById("adminPlanoCicloSistema");
+    const status=document.getElementById("adminPlanoStatusSistema");
+    const fim=document.getElementById("adminPlanoDataFimSistema");
+    const teste=document.getElementById("adminPlanoTesteFimSistema");
+    const carencia=document.getElementById("adminPlanoCarenciaFimSistema");
+    if(ciclo) ciclo.value=assinatura.billing_cycle || "monthly";
+    if(status) status.value=assinatura.status || "active";
+    if(fim) fim.value=valorDataInputPlanoSistema(assinatura.current_period_end);
+    if(teste) teste.value=valorDataInputPlanoSistema(assinatura.trial_ends_at);
+    if(carencia) carencia.value=valorDataInputPlanoSistema(assinatura.grace_ends_at);
+    if(msg) msg.innerText=assinatura.id ? "Plano carregado. Ajuste se precisar e salve." : "Nenhum plano salvo ainda. Escolha um plano e salve.";
+    return true;
+  }catch(e){
+    console.warn("Administração do plano:",e);
+    if(msg) msg.innerText="Não foi possível carregar o plano: "+textoErroOnlineSistema(e);
+    if(mostrarAviso) alert("Não foi possível carregar o plano. Confira se a etapa SQL de planos foi instalada.");
+    return false;
+  }
+}
+async function salvarAdminPlanoClinicaSistema(){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminPlanoStatusMensagemSistema");
+  if(!db){
+    if(msg) msg.innerText="Conecte o sistema ao Supabase antes de salvar o plano.";
+    return false;
+  }
+  try{
+    const planId=document.getElementById("adminPlanoSelectSistema")?.value || "";
+    if(!planId) throw new Error("Escolha um plano antes de salvar.");
+    if(msg) msg.innerText="Salvando plano da clínica...";
+    const {sessao,perfil}=await buscarPerfilPlanoAdminSistema(db);
+    const payload={
+      clinic_id:perfil.clinic_id,
+      plan_id:planId,
+      billing_cycle:document.getElementById("adminPlanoCicloSistema")?.value || "monthly",
+      status:document.getElementById("adminPlanoStatusSistema")?.value || "active",
+      current_period_start:new Date().toISOString(),
+      current_period_end:valorIsoFimDiaPlanoSistema(document.getElementById("adminPlanoDataFimSistema")?.value),
+      trial_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("adminPlanoTesteFimSistema")?.value),
+      grace_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("adminPlanoCarenciaFimSistema")?.value),
+      metadata:{
+        source:"admin_plans_panel",
+        blocking_enabled:false,
+        updated_by:sessao.user?.email || perfil.full_name || "admin",
+        updated_at:new Date().toISOString()
+      },
+      updated_at:new Date().toISOString()
+    };
+    const salvarResp=await consultaOnlineComTempoSistema(
+      db.from("clinic_subscriptions").upsert(payload,{onConflict:"clinic_id"}).select("id").maybeSingle(),
+      "Salvar plano da clínica",
+      25
+    );
+    if(salvarResp.error) throw salvarResp.error;
+    if(msg) msg.innerText="Plano da clínica salvo com sucesso.";
+    await carregarPlanoClinicaOnlineSistema(false);
+    await carregarAdminPlanoClinicaSistema(false);
+    return true;
+  }catch(e){
+    console.warn("Salvar plano:",e);
+    if(msg) msg.innerText="Não foi possível salvar o plano: "+textoErroOnlineSistema(e);
+    alert("Não foi possível salvar o plano. Se aparecer erro de permissão, execute a etapa 8 no Supabase.");
+    return false;
+  }
+}
 window.carregarPlanoClinicaOnlineSistema=carregarPlanoClinicaOnlineSistema;
+window.carregarAdminPlanoClinicaSistema=carregarAdminPlanoClinicaSistema;
+window.salvarAdminPlanoClinicaSistema=salvarAdminPlanoClinicaSistema;
 async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){
   let timer=null;
   try{

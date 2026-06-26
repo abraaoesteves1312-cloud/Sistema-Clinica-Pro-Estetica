@@ -12540,7 +12540,7 @@ function valorIsoFimDiaPlanoSistema(valor){
 }
 function usuarioPodeAdministrarPlanoSistema(perfil){
   const role=String(perfil?.role || "").toLowerCase();
-  return ["admin","administrator","administrador","owner","proprietario","proprietário"].includes(role);
+  return ["admin","adm","administrator","administrador","administradora","owner","proprietario","proprietário","gestor","gestora","master","superadmin"].includes(role);
 }
 function preencherSelectPlanosComerciaisSistema(planos,selecionadoId=""){
   const select=document.getElementById("adminPlanoSelectSistema");
@@ -12615,6 +12615,33 @@ async function carregarAdminPlanoClinicaSistema(mostrarAviso=false){
     return false;
   }
 }
+async function salvarPlanoClinicaRpcSistema(db,payload){
+  return await consultaOnlineComTempoSistema(
+    db.rpc("admin_save_clinic_subscription",{
+      p_clinic_id:payload.clinic_id,
+      p_plan_id:payload.plan_id,
+      p_billing_cycle:payload.billing_cycle,
+      p_status:payload.status,
+      p_current_period_start:payload.current_period_start,
+      p_current_period_end:payload.current_period_end,
+      p_trial_ends_at:payload.trial_ends_at,
+      p_grace_ends_at:payload.grace_ends_at,
+      p_metadata:payload.metadata
+    }),
+    "Salvar plano da clínica",
+    25
+  );
+}
+async function salvarPlanoClinicaDiretoSistema(db,payload){
+  return await consultaOnlineComTempoSistema(
+    db.from("clinic_subscriptions")
+      .upsert(payload,{onConflict:"clinic_id"})
+      .select("id,clinic_id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at")
+      .maybeSingle(),
+    "Salvar plano da clínica por tabela",
+    25
+  );
+}
 async function salvarAdminPlanoClinicaSistema(){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminPlanoStatusMensagemSistema");
@@ -12623,7 +12650,11 @@ async function salvarAdminPlanoClinicaSistema(){
     return false;
   }
   try{
-    const planId=document.getElementById("adminPlanoSelectSistema")?.value || "";
+    let planId=document.getElementById("adminPlanoSelectSistema")?.value || "";
+    if(!planId){
+      await carregarAdminPlanoClinicaSistema(false);
+      planId=document.getElementById("adminPlanoSelectSistema")?.value || "";
+    }
     if(!planId) throw new Error("Escolha um plano antes de salvar.");
     if(msg) msg.innerText="Salvando plano da clínica...";
     const {sessao,perfil}=await buscarPerfilPlanoAdminSistema(db);
@@ -12644,29 +12675,22 @@ async function salvarAdminPlanoClinicaSistema(){
       },
       updated_at:new Date().toISOString()
     };
-    const salvarResp=await consultaOnlineComTempoSistema(
-      db.rpc("admin_save_clinic_subscription",{
-        p_clinic_id:payload.clinic_id,
-        p_plan_id:payload.plan_id,
-        p_billing_cycle:payload.billing_cycle,
-        p_status:payload.status,
-        p_current_period_end:payload.current_period_end,
-        p_trial_ends_at:payload.trial_ends_at,
-        p_grace_ends_at:payload.grace_ends_at,
-        p_metadata:payload.metadata
-      }),
-      "Salvar plano da clínica",
-      25
-    );
-    if(salvarResp.error) throw salvarResp.error;
-    if(msg) msg.innerText="Plano da clínica salvo com sucesso.";
+    const salvarResp=await salvarPlanoClinicaRpcSistema(db,payload);
+    if(salvarResp.error){
+      if(msg) msg.innerText="A função segura recusou. Tentando salvar pelo caminho direto...";
+      const diretoResp=await salvarPlanoClinicaDiretoSistema(db,payload);
+      if(diretoResp.error){
+        throw new Error("Função segura: "+textoErroOnlineSistema(salvarResp.error)+" | Caminho direto: "+textoErroOnlineSistema(diretoResp.error));
+      }
+    }
+    if(msg) msg.innerText="Plano da clínica salvo com sucesso no online.";
     await carregarPlanoClinicaOnlineSistema(false);
     await carregarAdminPlanoClinicaSistema(false);
     return true;
   }catch(e){
     console.warn("Salvar plano:",e);
     if(msg) msg.innerText="Não foi possível salvar o plano: "+textoErroOnlineSistema(e);
-    alert("Não foi possível salvar o plano: "+textoErroOnlineSistema(e)+"\n\nExecute a etapa 8B no Supabase e tente novamente.");
+    alert("Não foi possível salvar o plano.\n\nMotivo: "+textoErroOnlineSistema(e)+"\n\nSe a mensagem falar de permissão ou RLS, execute a etapa 8B no Supabase e tente novamente.");
     return false;
   }
 }

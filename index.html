@@ -1854,6 +1854,53 @@ body > #resultadoPacientes{
 .online-central-pro .config-acoes{
   margin-top:10px;
 }
+.plano-comercial-pro{
+  margin-top:16px;
+  border:1px solid rgba(184,122,71,.34);
+  background:linear-gradient(135deg,rgba(255,250,247,.98),rgba(255,241,236,.90));
+}
+.plano-comercial-resumo{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:12px 0;
+}
+.plano-comercial-item{
+  min-height:74px;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:white;
+}
+.plano-comercial-item span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  margin-bottom:5px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.plano-comercial-item b{
+  display:block;
+  color:var(--text);
+  font-size:14px;
+  line-height:1.35;
+  word-break:break-word;
+}
+.plano-comercial-status{
+  display:inline-flex;
+  align-items:center;
+  border-radius:999px;
+  padding:6px 10px;
+  font-size:12px;
+  font-weight:700;
+  background:#fff3e8;
+  color:#8a552d;
+}
+.plano-comercial-status.ativo{
+  background:#edf8ef;
+  color:#28733b;
+}
 .online-central-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
@@ -1886,6 +1933,7 @@ body > #resultadoPacientes{
   .config-user-campos,
   .config-acessos-grid,
   .online-central-grid{grid-template-columns:1fr}
+  .plano-comercial-resumo{grid-template-columns:1fr 1fr}
 }
 
 </style>
@@ -4783,6 +4831,20 @@ function montarTelaConfig(){
         </div>
         <div id="onlineStatusSistema" class="msg">Online preparado. Use o teste geral para conferir pacientes, prontuário, fotos, agenda, estoque e financeiro.</div>
         <div id="onlineDiagnosticoSistema" class="msg" style="white-space:pre-line;margin-top:10px;display:none"></div>
+      </section>
+      <section id="painelPlanoAssinaturaSistema" class="config-card-pro plano-comercial-pro">
+        <h3>Plano e assinatura da clínica</h3>
+        <p>Esta área prepara o sistema para venda por assinatura. Cada clínica terá seu próprio acesso, seus dados e seu plano.</p>
+        <div class="plano-comercial-resumo">
+          <div class="plano-comercial-item"><span>Clínica online</span><b id="planoClinicaNomeSistema">Aguardando conexão</b></div>
+          <div class="plano-comercial-item"><span>Plano</span><b id="planoNomeSistema">Não consultado</b></div>
+          <div class="plano-comercial-item"><span>Cobrança</span><b id="planoCicloSistema">Não definida</b></div>
+          <div class="plano-comercial-item"><span>Situação</span><b><span id="planoStatusSistema" class="plano-comercial-status">Preparação</span></b></div>
+        </div>
+        <div id="planoAssinaturaMensagemSistema" class="msg">Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.</div>
+        <div class="config-acoes">
+          <button class="btn-light" type="button" onclick="carregarPlanoClinicaOnlineSistema(true)">Atualizar situação do plano</button>
+        </div>
       </section>
       <div class="config-grid-pro">
         <section class="config-card-pro">
@@ -12227,7 +12289,9 @@ async function entrarOnlineSistema(){
   if(msg) msg.innerText="Entrando no acesso online...";
   const {error}=await db.auth.signInWithPassword({email,password:senha});
   if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
-  if(msg) msg.innerText="Acesso online conectado. Agora você pode testar ou sincronizar pacientes.";
+  if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
+  await carregarPlanoClinicaOnlineSistema(false);
+  if(msg) msg.innerText="Acesso online conectado. Agora você pode testar ou sincronizar os dados.";
 }
 async function sairOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
@@ -12235,6 +12299,129 @@ async function sairOnlineSistema(){
   if(db) await db.auth.signOut();
   if(msg) msg.innerText="Acesso online desconectado.";
 }
+function textoPlanoComercialSistema(valor,padrao="-"){
+  const texto=String(valor ?? "").trim();
+  return texto || padrao;
+}
+function dataPlanoComercialSistema(valor){
+  if(!valor) return "Não definida";
+  const data=new Date(valor);
+  if(Number.isNaN(data.getTime())) return "Não definida";
+  return data.toLocaleDateString("pt-BR");
+}
+function rotuloCicloPlanoSistema(valor){
+  const ciclos={monthly:"Mensal",yearly:"Anual",mensal:"Mensal",anual:"Anual"};
+  return ciclos[String(valor || "").toLowerCase()] || "Não definido";
+}
+function rotuloStatusPlanoSistema(valor){
+  const status={
+    trialing:"Período de teste",
+    active:"Ativo",
+    past_due:"Pagamento pendente",
+    grace:"Prazo de regularização",
+    suspended:"Suspenso",
+    canceled:"Cancelado"
+  };
+  return status[String(valor || "").toLowerCase()] || "Preparação";
+}
+function atualizarPainelPlanoComercialSistema(dados={}){
+  const clinica=document.getElementById("planoClinicaNomeSistema");
+  const plano=document.getElementById("planoNomeSistema");
+  const ciclo=document.getElementById("planoCicloSistema");
+  const status=document.getElementById("planoStatusSistema");
+  const mensagem=document.getElementById("planoAssinaturaMensagemSistema");
+  if(clinica) clinica.innerText=textoPlanoComercialSistema(dados.clinica,"Aguardando conexão");
+  if(plano) plano.innerText=textoPlanoComercialSistema(dados.plano,"Estrutura ainda não instalada");
+  if(ciclo) ciclo.innerText=rotuloCicloPlanoSistema(dados.ciclo);
+  if(status){
+    status.innerText=rotuloStatusPlanoSistema(dados.status);
+    status.classList.toggle("ativo",["active","trialing"].includes(String(dados.status || "").toLowerCase()));
+  }
+  if(mensagem){
+    mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
+  }
+}
+async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("planoAssinaturaMensagemSistema");
+  if(!db){
+    atualizarPainelPlanoComercialSistema({mensagem:"Conecte o sistema ao Supabase para consultar o plano da clínica."});
+    return false;
+  }
+  try{
+    if(msg) msg.innerText="Consultando a clínica e o plano online...";
+    const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
+    const sessao=sessaoResp?.data?.session;
+    if(!sessao){
+      atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
+      return false;
+    }
+    const perfilResp=await consultaOnlineComTempoSistema(
+      db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle(),
+      "Consulta do perfil da clínica",
+      20
+    );
+    if(perfilResp.error) throw perfilResp.error;
+    const perfil=perfilResp.data;
+    if(!perfil?.clinic_id){
+      atualizarPainelPlanoComercialSistema({mensagem:"Este usuário ainda não está vinculado a uma clínica online."});
+      return false;
+    }
+    const conf=configSistemaSeguro();
+    conf.online=conf.online || {};
+    conf.online.clinicId=perfil.clinic_id;
+    salvarConfigSistemaSeguro(conf);
+    const campoClinic=document.getElementById("onlineClinicId");
+    if(campoClinic) campoClinic.value=perfil.clinic_id;
+
+    const clinicaResp=await consultaOnlineComTempoSistema(
+      db.from("clinics").select("name").eq("id",perfil.clinic_id).maybeSingle(),
+      "Consulta da clínica",
+      20
+    );
+    if(clinicaResp.error) throw clinicaResp.error;
+    const nomeClinica=clinicaResp.data?.name || configSistemaSeguro().clinica || "Clínica online";
+
+    const assinaturaResp=await consultaOnlineComTempoSistema(
+      db.from("clinic_subscriptions")
+        .select("status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
+        .eq("clinic_id",perfil.clinic_id)
+        .maybeSingle(),
+      "Consulta da assinatura",
+      20
+    );
+    if(assinaturaResp.error){
+      const tabelaAusente=/clinic_subscriptions|schema cache|does not exist|relation/i.test(assinaturaResp.error.message || "");
+      if(tabelaAusente){
+        atualizarPainelPlanoComercialSistema({
+          clinica:nomeClinica,
+          mensagem:"A clínica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio está ativo."
+        });
+        return true;
+      }
+      throw assinaturaResp.error;
+    }
+    const assinatura=assinaturaResp.data || {};
+    const planoLigado=Array.isArray(assinatura.commercial_plans) ? assinatura.commercial_plans[0] : assinatura.commercial_plans;
+    const dataFinal=assinatura.current_period_end || assinatura.trial_ends_at || assinatura.grace_ends_at;
+    atualizarPainelPlanoComercialSistema({
+      clinica:nomeClinica,
+      plano:planoLigado?.name || "Sem plano definido",
+      ciclo:assinatura.billing_cycle,
+      status:assinatura.status,
+      mensagem:dataFinal
+        ? `Assinatura identificada. Próxima data de referência: ${dataPlanoComercialSistema(dataFinal)}. Nenhum bloqueio foi ativado nesta etapa.`
+        : "Assinatura identificada. Nenhum bloqueio foi ativado nesta etapa."
+    });
+    return true;
+  }catch(e){
+    console.warn("Consulta comercial online:",e);
+    atualizarPainelPlanoComercialSistema({mensagem:"Não foi possível consultar o plano agora: "+textoErroOnlineSistema(e)});
+    if(mostrarAviso) alert("Não foi possível consultar o plano agora. Confira a conexão online.");
+    return false;
+  }
+}
+window.carregarPlanoClinicaOnlineSistema=carregarPlanoClinicaOnlineSistema;
 async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){
   let timer=null;
   try{
@@ -13693,6 +13880,7 @@ window.renderConfig = function(){
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
   destacarCadastroFuncionariosConfig();
+  setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);
   const painel=document.getElementById("painelPreparacaoOnline");
   if(painel && !document.getElementById("painelLimpezaLocal")){
     painel.insertAdjacentHTML("afterend",`<section id="painelLimpezaLocal" class="config-card-pro" style="margin-top:16px">

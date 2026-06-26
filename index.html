@@ -12645,7 +12645,16 @@ async function salvarAdminPlanoClinicaSistema(){
       updated_at:new Date().toISOString()
     };
     const salvarResp=await consultaOnlineComTempoSistema(
-      db.from("clinic_subscriptions").upsert(payload,{onConflict:"clinic_id"}).select("id").maybeSingle(),
+      db.rpc("admin_save_clinic_subscription",{
+        p_clinic_id:payload.clinic_id,
+        p_plan_id:payload.plan_id,
+        p_billing_cycle:payload.billing_cycle,
+        p_status:payload.status,
+        p_current_period_end:payload.current_period_end,
+        p_trial_ends_at:payload.trial_ends_at,
+        p_grace_ends_at:payload.grace_ends_at,
+        p_metadata:payload.metadata
+      }),
       "Salvar plano da clínica",
       25
     );
@@ -12657,7 +12666,7 @@ async function salvarAdminPlanoClinicaSistema(){
   }catch(e){
     console.warn("Salvar plano:",e);
     if(msg) msg.innerText="Não foi possível salvar o plano: "+textoErroOnlineSistema(e);
-    alert("Não foi possível salvar o plano. Se aparecer erro de permissão, execute a etapa 8 no Supabase.");
+    alert("Não foi possível salvar o plano: "+textoErroOnlineSistema(e)+"\n\nExecute a etapa 8B no Supabase e tente novamente.");
     return false;
   }
 }

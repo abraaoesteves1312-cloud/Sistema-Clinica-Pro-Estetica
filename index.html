@@ -12269,15 +12269,22 @@ async function autenticarUsuarioConfigLocal(email,senha){
 }
 async function criarPrimeiroAdministradorLocal(email,senha){
   const conf=configSistemaSeguro();
+  const emailAdmin=String(email || "").trim().toLowerCase();
+  const usuariosAtuais=Array.isArray(conf.usuarios)?conf.usuarios:[];
   const usuario={
     nome:"Administrador",
-    email,
+    email:emailAdmin,
     perfil:"Administrador",
     acessos:todosAcessosSistema(),
     ativo:true,
-    senhaHash:await senhaHashSistemaProfissional(email,senha)
+    senhaHash:await senhaHashSistemaProfissional(emailAdmin,senha)
   };
-  conf.usuarios=[usuario];
+  const restantes=usuariosAtuais.filter(u=>{
+    const emailUsuario=String(u && u.email || "").trim().toLowerCase();
+    const perfilUsuario=perfilUsuarioSistema(u || {});
+    return emailUsuario!==emailAdmin && perfilUsuario!=="Administrador";
+  });
+  conf.usuarios=[usuario,...restantes];
   if(!conf.clinica) conf.clinica="Clínica";
   salvarConfigSistemaSeguro(conf);
   return usuario;

@@ -5152,7 +5152,10 @@ function renderConfigProfissionais(lista){
   if(!area) return;
   area.innerHTML = "";
   const base = Array.isArray(lista) && lista.length ? lista : [{nome:configSistema().resp || "", cargo:""}];
-  base.forEach(p=>adicionarProfissionalConfig(p.nome || p, p.cargo || p.especialidade || ""));
+  base.forEach(p=>{
+    const item=typeof p==="string"?{nome:p,cargo:""}:(p || {});
+    adicionarProfissionalConfig(item.nome || item.name || item.full_name || "", item.cargo || item.especialidade || item.role || "");
+  });
 }
 
 function acessosPadraoFuncionario(){return acessosPerfilSistema("Funcionário")}

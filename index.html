@@ -12683,9 +12683,10 @@ async function salvarAdminPlanoClinicaSistema(){
         throw new Error("Função segura: "+textoErroOnlineSistema(salvarResp.error)+" | Caminho direto: "+textoErroOnlineSistema(diretoResp.error));
       }
     }
-    if(msg) msg.innerText="Plano da clínica salvo com sucesso no online.";
+    if(msg) msg.innerText="Plano salvo com sucesso!";
     await carregarPlanoClinicaOnlineSistema(false);
     await carregarAdminPlanoClinicaSistema(false);
+    if(msg) msg.innerText="Plano salvo com sucesso!";
     return true;
   }catch(e){
     console.warn("Salvar plano:",e);
@@ -12730,9 +12731,19 @@ function mostrarDiagnosticoOnlineSistema(linhas){
   box.innerText=linhas.join("\n");
 }
 function textoErroOnlineSistema(e){
-  const msg=(e && e.message) ? e.message : String(e || "erro desconhecido");
+  const partes=[];
+  if(e && e.message) partes.push(e.message);
+  if(e && e.details) partes.push(e.details);
+  if(e && e.detail) partes.push(typeof e.detail==="string" ? e.detail : JSON.stringify(e.detail));
+  if(e && e.hint) partes.push("Dica: "+e.hint);
+  if(e && e.code) partes.push("Código: "+e.code);
+  if(e && e.status) partes.push("Status: "+e.status);
+  const msg=partes.filter(Boolean).join(" | ") || String(e || "erro desconhecido");
   if(/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)){
     return "Falha de rede: o navegador não conseguiu conversar com o Supabase.";
+  }
+  if(/Bad Request/i.test(msg)){
+    return "Bad Request: o servidor recusou os dados enviados. Confira se a etapa SQL 8B foi executada e se plano, cobrança, situação e datas estão válidos. Detalhe: "+msg;
   }
   return msg;
 }

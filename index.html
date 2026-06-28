@@ -12323,6 +12323,7 @@ window.entrarSistema = async function(){
     mensagemLoginProfissional("E-mail ou senha inválidos.");
     return;
   }
+  if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
   definirUsuarioAtualSistema({...usuario,perfil:perfilUsuarioSistema(usuario),acessos:usuario.acessos || acessosPerfilSistema(usuario.perfil)});
   const loginPage=document.getElementById("loginPage");
   const app=document.getElementById("app");
@@ -12368,7 +12369,13 @@ window.renderConfigUsuarios = function(lista){
   const area=document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML="";
-  const base=Array.isArray(lista)&&lista.length?lista:[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()}];
+  const base=Array.isArray(lista)&&lista.length?[...lista]:[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()}];
+  const atual=usuarioAtualSistema();
+  const emailAtual=String(atual && atual.email || "").trim().toLowerCase();
+  const existeAtual=emailAtual && base.some(u=>String(u && u.email || "").trim().toLowerCase()===emailAtual);
+  if(emailAtual && usuarioAdminSistema(atual) && !existeAtual){
+    base.unshift({...atual,nome:atual.nome || "Administrador",email:emailAtual,perfil:"Administrador",ativo:true,acessos:todosAcessosSistema()});
+  }
   base.forEach(u=>adicionarUsuarioConfig(u.nome||"",u.email||"","",u.perfil||"Administrador",u.acessos||null,u.senhaHash||"",u.senha||"",u.ativo!==false));
 };
 window.coletarUsuariosConfig = async function(){

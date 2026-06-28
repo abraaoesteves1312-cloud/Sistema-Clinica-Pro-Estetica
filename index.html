@@ -12399,7 +12399,23 @@ window.coletarUsuariosConfig = async function(){
 };
 window.salvarConfig = async function(){
   montarTelaConfig();
-  const usuarios=await coletarUsuariosConfig();
+  const confAtual=configSistemaSeguro();
+  let usuarios=await coletarUsuariosConfig();
+  const emailsSalvos=new Set(usuarios.map(u=>String(u.email || "").trim().toLowerCase()).filter(Boolean));
+  const adminsExistentes=(Array.isArray(confAtual.usuarios)?confAtual.usuarios:[]).filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
+  adminsExistentes.forEach(admin=>{
+    const emailAdmin=String(admin.email || "").trim().toLowerCase();
+    if(emailAdmin && !emailsSalvos.has(emailAdmin)){
+      usuarios.unshift({...admin,email:emailAdmin,perfil:"Administrador",ativo:admin.ativo!==false,acessos:todosAcessosSistema()});
+      emailsSalvos.add(emailAdmin);
+    }
+  });
+  const usuarioAtual=usuarioAtualSistema();
+  const emailAtual=String(usuarioAtual && usuarioAtual.email || "").trim().toLowerCase();
+  if(emailAtual && perfilUsuarioSistema(usuarioAtual)==="Administrador" && !emailsSalvos.has(emailAtual) && usuarioAtual.senhaHash){
+    usuarios.unshift({...usuarioAtual,email:emailAtual,perfil:"Administrador",ativo:true,acessos:todosAcessosSistema()});
+    emailsSalvos.add(emailAtual);
+  }
   if(!usuarios.length){
     alert("Cadastre pelo menos um usuário com e-mail e senha.");
     return;

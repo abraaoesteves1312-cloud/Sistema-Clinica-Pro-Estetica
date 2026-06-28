@@ -1909,6 +1909,40 @@ body > #resultadoPacientes{
   background:#fdebec;
   color:#9b1c26;
 }
+.plano-bloqueio-overlay{
+  position:fixed;
+  inset:0;
+  z-index:99999;
+  background:rgba(47,34,39,.72);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:22px;
+}
+.plano-bloqueio-card{
+  width:min(520px,100%);
+  background:#fffaf7;
+  border:1px solid rgba(192,161,106,.45);
+  border-radius:22px;
+  padding:22px;
+  box-shadow:0 28px 90px rgba(36,24,28,.35);
+  color:var(--text);
+}
+.plano-bloqueio-card h2{
+  margin:0 0 8px;
+  color:#8a2f3b;
+  font-size:22px;
+}
+.plano-bloqueio-card p{
+  margin:8px 0;
+  line-height:1.45;
+}
+.plano-bloqueio-acoes{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:16px;
+}
 .plano-admin-card{
   margin-top:12px;
   padding:12px;
@@ -3217,6 +3251,7 @@ function entrarSistema(){
   clinicaLogada.innerText=clinica;
   aplicarPermissoesUsuarioAtual();
   atualizarTudo();
+  verificarPlanoComercialAoEntrarSistema();
 }
 function entrarRapido(){
   emailLogin.value="teste@clinica.com";
@@ -3227,8 +3262,9 @@ function entrarRapido(){
   clinicaLogada.innerText=" ";
   aplicarPermissoesUsuarioAtual();
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
+  verificarPlanoComercialAoEntrarSistema();
 }
-function sairSistema(){sessionStorage.removeItem("gepV2_usuarioLogado");window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
+function sairSistema(){removerBloqueioPlanoComercialSistema();sessionStorage.removeItem("gepV2_usuarioLogado");window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
   prontuarioAbaAtual = aba || "resumo";
@@ -4906,7 +4942,7 @@ function montarTelaConfig(){
         </div>
         <div class="plano-admin-card" id="planoAdminClinicaSistema">
           <h4>Administrar plano desta clinica</h4>
-          <p>Defina aqui o plano comercial da clinica. Nesta etapa o sistema organiza o controle; o bloqueio automatico fica para a proxima fase.</p>
+          <p>Defina aqui o plano comercial da clinica. O sistema consulta essas datas para liberar, avisar ou bloquear automaticamente o acesso.</p>
           <div class="plano-admin-grid">
             <label>Plano
               <select id="adminPlanoSelectSistema">
@@ -12390,13 +12426,14 @@ async function entrarOnlineSistema(){
   const {error}=await db.auth.signInWithPassword({email,password:senha});
   if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
   if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
-  await carregarPlanoClinicaOnlineSistema(false);
-  if(msg) msg.innerText="Acesso online conectado. Agora você pode testar ou sincronizar os dados.";
+  const liberado=await carregarPlanoClinicaOnlineSistema(false);
+  if(msg) msg.innerText=liberado ? "Acesso online conectado. Agora você pode testar ou sincronizar os dados." : "Acesso online conectado, mas o plano precisa ser regularizado antes de usar o sistema.";
 }
 async function sairOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   const db=clienteSupabaseSistema();
   if(db) await db.auth.signOut();
+  removerBloqueioPlanoComercialSistema();
   if(msg) msg.innerText="Acesso online desconectado.";
 }
 function textoPlanoComercialSistema(valor,padrao="-"){
@@ -12424,6 +12461,136 @@ function rotuloStatusPlanoSistema(valor){
   };
   return status[String(valor || "").toLowerCase()] || "Preparação";
 }
+function dataPlanoValidaAteSistema(valor){
+  if(!valor) return null;
+  const data=new Date(valor);
+  if(Number.isNaN(data.getTime())) return null;
+  return data;
+}
+function dataAindaVigentePlanoSistema(valor){
+  const data=dataPlanoValidaAteSistema(valor);
+  return !!data && data.getTime() >= Date.now();
+}
+function montarResultadoPlanoSistema({bloqueado=false,alerta=false,mensagem="",motivo="",referencia=null}={}){
+  return {bloqueado,alerta,mensagem,motivo,referencia};
+}
+function avaliarAcessoPlanoComercialSistema(assinatura={}){
+  if(!assinatura || !assinatura.id){
+    return montarResultadoPlanoSistema({
+      mensagem:"Nenhuma assinatura comercial foi encontrada. O sistema permanece liberado até configurar o plano da clínica."
+    });
+  }
+  const status=String(assinatura.status || "").toLowerCase();
+  const periodoFim=assinatura.current_period_end;
+  const testeFim=assinatura.trial_ends_at;
+  const toleranciaFim=assinatura.grace_ends_at;
+  const toleranciaAtiva=dataAindaVigentePlanoSistema(toleranciaFim);
+  const ref=periodoFim || testeFim || toleranciaFim;
+
+  if(["suspended","canceled"].includes(status)){
+    return montarResultadoPlanoSistema({
+      bloqueado:true,
+      motivo:status==="canceled" ? "Assinatura cancelada." : "Assinatura suspensa.",
+      referencia:ref,
+      mensagem:"A assinatura da clínica está "+rotuloStatusPlanoSistema(status).toLowerCase()+". O acesso ao sistema foi bloqueado até regularização."
+    });
+  }
+  if(status==="past_due" || status==="grace"){
+    if(toleranciaAtiva){
+      return montarResultadoPlanoSistema({
+        alerta:true,
+        referencia:toleranciaFim,
+        mensagem:`Pagamento pendente. A clínica está em tolerância até ${dataPlanoComercialSistema(toleranciaFim)}.`
+      });
+    }
+    return montarResultadoPlanoSistema({
+      bloqueado:true,
+      motivo:"Pagamento pendente com tolerância encerrada.",
+      referencia:toleranciaFim || periodoFim,
+      mensagem:"Pagamento pendente e prazo de tolerância encerrado. O acesso ao sistema foi bloqueado até regularização."
+    });
+  }
+  if(status==="trialing"){
+    if(!testeFim || dataAindaVigentePlanoSistema(testeFim)){
+      return montarResultadoPlanoSistema({
+        alerta:true,
+        referencia:testeFim,
+        mensagem:testeFim ? `Período de teste ativo até ${dataPlanoComercialSistema(testeFim)}.` : "Período de teste ativo."
+      });
+    }
+    if(toleranciaAtiva){
+      return montarResultadoPlanoSistema({
+        alerta:true,
+        referencia:toleranciaFim,
+        mensagem:`Teste encerrado. A clínica está em tolerância até ${dataPlanoComercialSistema(toleranciaFim)}.`
+      });
+    }
+    return montarResultadoPlanoSistema({
+      bloqueado:true,
+      motivo:"Período de teste encerrado.",
+      referencia:testeFim,
+      mensagem:"O período de teste terminou e não há tolerância ativa. O acesso ao sistema foi bloqueado."
+    });
+  }
+  if(status==="active"){
+    if(!periodoFim || dataAindaVigentePlanoSistema(periodoFim)){
+      return montarResultadoPlanoSistema({
+        referencia:periodoFim,
+        mensagem:periodoFim ? `Assinatura ativa. Próxima data de referência: ${dataPlanoComercialSistema(periodoFim)}.` : "Assinatura ativa. Nenhum bloqueio comercial está ativo."
+      });
+    }
+    if(toleranciaAtiva){
+      return montarResultadoPlanoSistema({
+        alerta:true,
+        referencia:toleranciaFim,
+        mensagem:`Período do plano vencido. A clínica está em tolerância até ${dataPlanoComercialSistema(toleranciaFim)}.`
+      });
+    }
+    return montarResultadoPlanoSistema({
+      bloqueado:true,
+      motivo:"Período do plano vencido.",
+      referencia:periodoFim,
+      mensagem:"O período do plano venceu e não há tolerância ativa. O acesso ao sistema foi bloqueado até regularização."
+    });
+  }
+  return montarResultadoPlanoSistema({
+    referencia:ref,
+    mensagem:ref ? `Assinatura identificada. Próxima data de referência: ${dataPlanoComercialSistema(ref)}.` : "Assinatura identificada."
+  });
+}
+function removerBloqueioPlanoComercialSistema(){
+  window.__planoComercialBloqueadoSistema={bloqueado:false};
+  const overlay=document.getElementById("planoBloqueioOverlaySistema");
+  if(overlay) overlay.remove();
+}
+function aplicarBloqueioPlanoComercialSistema(resultado={},dados={}){
+  window.__planoComercialBloqueadoSistema=resultado || {bloqueado:false};
+  if(!resultado.bloqueado){
+    removerBloqueioPlanoComercialSistema();
+    return;
+  }
+  let overlay=document.getElementById("planoBloqueioOverlaySistema");
+  if(!overlay){
+    overlay=document.createElement("div");
+    overlay.id="planoBloqueioOverlaySistema";
+    overlay.className="plano-bloqueio-overlay";
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML=`<div class="plano-bloqueio-card">
+    <h2>Acesso bloqueado</h2>
+    <p><strong>${escapeHtmlText(dados.clinica || "Clínica")}</strong></p>
+    <p>${escapeHtmlText(resultado.mensagem || "A assinatura desta clínica precisa ser regularizada para continuar usando o sistema.")}</p>
+    ${resultado.referencia ? `<p><strong>Data de referência:</strong> ${escapeHtmlText(dataPlanoComercialSistema(resultado.referencia))}</p>` : ""}
+    <p>Regularize o pagamento ou altere a situação do plano para liberar o uso novamente.</p>
+    <div class="plano-bloqueio-acoes">
+      <button class="btn-main" type="button" onclick="carregarPlanoClinicaOnlineSistema(true)">Atualizar situação</button>
+      <button class="btn-light" type="button" onclick="sairSistema()">Sair</button>
+    </div>
+  </div>`;
+}
+function verificarPlanoComercialAoEntrarSistema(){
+  setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},450);
+}
 function atualizarPainelPlanoComercialSistema(dados={}){
   const clinica=document.getElementById("planoClinicaNomeSistema");
   const plano=document.getElementById("planoNomeSistema");
@@ -12436,9 +12603,11 @@ function atualizarPainelPlanoComercialSistema(dados={}){
   if(status){
     const statusValor=String(dados.status || "").toLowerCase();
     status.innerText=rotuloStatusPlanoSistema(dados.status);
-    status.classList.toggle("ativo",["active","trialing"].includes(statusValor));
-    status.classList.toggle("alerta",["past_due","grace"].includes(statusValor));
-    status.classList.toggle("bloqueado",["suspended","canceled"].includes(statusValor));
+    const bloqueado=!!dados.bloqueado || ["suspended","canceled"].includes(statusValor);
+    const alerta=!!dados.alerta || ["past_due","grace"].includes(statusValor);
+    status.classList.toggle("ativo",!bloqueado && !alerta && ["active","trialing"].includes(statusValor));
+    status.classList.toggle("alerta",!bloqueado && alerta);
+    status.classList.toggle("bloqueado",bloqueado);
   }
   if(mensagem){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
@@ -12448,6 +12617,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("planoAssinaturaMensagemSistema");
   if(!db){
+    removerBloqueioPlanoComercialSistema();
     atualizarPainelPlanoComercialSistema({mensagem:"Conecte o sistema ao Supabase para consultar o plano da clínica."});
     return false;
   }
@@ -12456,6 +12626,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
     const sessao=sessaoResp?.data?.session;
     if(!sessao){
+      removerBloqueioPlanoComercialSistema();
       atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
       return false;
     }
@@ -12487,7 +12658,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
 
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")
-        .select("plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
+        .select("id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
         .eq("clinic_id",perfil.clinic_id)
         .maybeSingle(),
       "Consulta da assinatura",
@@ -12496,6 +12667,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     if(assinaturaResp.error){
       const tabelaAusente=/clinic_subscriptions|schema cache|does not exist|relation/i.test(assinaturaResp.error.message || "");
       if(tabelaAusente){
+        removerBloqueioPlanoComercialSistema();
         atualizarPainelPlanoComercialSistema({
           clinica:nomeClinica,
           mensagem:"A clínica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio está ativo."
@@ -12506,17 +12678,18 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     }
     const assinatura=assinaturaResp.data || {};
     const planoLigado=Array.isArray(assinatura.commercial_plans) ? assinatura.commercial_plans[0] : assinatura.commercial_plans;
-    const dataFinal=assinatura.current_period_end || assinatura.trial_ends_at || assinatura.grace_ends_at;
+    const regraPlano=avaliarAcessoPlanoComercialSistema(assinatura);
     atualizarPainelPlanoComercialSistema({
       clinica:nomeClinica,
       plano:planoLigado?.name || "Sem plano definido",
       ciclo:assinatura.billing_cycle,
       status:assinatura.status,
-      mensagem:dataFinal
-        ? `Assinatura identificada. Próxima data de referência: ${dataPlanoComercialSistema(dataFinal)}. Nenhum bloqueio foi ativado nesta etapa.`
-        : "Assinatura identificada. Nenhum bloqueio foi ativado nesta etapa."
+      bloqueado:regraPlano.bloqueado,
+      alerta:regraPlano.alerta,
+      mensagem:regraPlano.mensagem
     });
-    return true;
+    aplicarBloqueioPlanoComercialSistema(regraPlano,{clinica:nomeClinica,plano:planoLigado?.name});
+    return !regraPlano.bloqueado;
   }catch(e){
     console.warn("Consulta comercial online:",e);
     atualizarPainelPlanoComercialSistema({mensagem:"Não foi possível consultar o plano agora: "+textoErroOnlineSistema(e)});

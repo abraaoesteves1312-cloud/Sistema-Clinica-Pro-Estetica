@@ -1993,6 +1993,56 @@ body > #resultadoPacientes{
   gap:8px;
   margin-top:10px;
 }
+.admin-geral-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:12px 0;
+}
+.admin-geral-stat{
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:white;
+}
+.admin-geral-stat span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.admin-geral-stat b{
+  display:block;
+  margin-top:5px;
+  color:var(--gold);
+  font-size:22px;
+}
+.admin-geral-lista{
+  display:grid;
+  gap:8px;
+  margin-top:10px;
+}
+.admin-geral-clinica{
+  display:grid;
+  grid-template-columns:minmax(180px,1.4fr) repeat(4,minmax(90px,1fr)) auto;
+  gap:9px;
+  align-items:center;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:rgba(255,255,255,.82);
+}
+.admin-geral-clinica strong{display:block;color:var(--text)}
+.admin-geral-clinica small{display:block;color:var(--muted);margin-top:3px}
+.admin-geral-editor{
+  margin-top:12px;
+  padding:12px;
+  border:1px dashed rgba(184,122,71,.38);
+  border-radius:16px;
+  background:rgba(255,255,255,.72);
+}
+.admin-geral-editor h4{margin:0 0 8px;color:var(--gold)}
 .online-central-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
@@ -2027,6 +2077,8 @@ body > #resultadoPacientes{
   .online-central-grid{grid-template-columns:1fr}
   .plano-comercial-resumo{grid-template-columns:1fr 1fr}
   .plano-admin-grid{grid-template-columns:1fr}
+  .admin-geral-grid{grid-template-columns:1fr 1fr}
+  .admin-geral-clinica{grid-template-columns:1fr}
 }
 
 </style>
@@ -4980,6 +5032,68 @@ function montarTelaConfig(){
             <button class="btn-main" type="button" onclick="salvarAdminPlanoClinicaSistema()">Salvar plano da clinica</button>
           </div>
           <div id="adminPlanoStatusMensagemSistema" class="msg">Entre online para administrar o plano.</div>
+        </div>
+      </section>
+      <section id="painelAdministradorGeralSistema" class="config-card-pro">
+        <h3>Painel de administrador geral</h3>
+        <p>Controle central do dono do sistema para acompanhar todas as clínicas, planos, usuários e bloqueios comerciais.</p>
+        <div class="config-acoes">
+          <button class="btn-main" type="button" onclick="carregarAdminGeralSistema(true)">Carregar clínicas</button>
+          <button class="btn-light" type="button" onclick="limparEditorAdminGeralSistema()">Limpar seleção</button>
+        </div>
+        <div id="adminGeralStatusSistema" class="msg">Execute a etapa SQL 9 e entre com um usuário superadmin para carregar este painel.</div>
+        <div class="admin-geral-grid">
+          <div class="admin-geral-stat"><span>Total de clínicas</span><b id="adminGeralTotalClinicas">0</b></div>
+          <div class="admin-geral-stat"><span>Ativas</span><b id="adminGeralAtivas">0</b></div>
+          <div class="admin-geral-stat"><span>Atenção</span><b id="adminGeralAtencao">0</b></div>
+          <div class="admin-geral-stat"><span>Bloqueadas</span><b id="adminGeralBloqueadas">0</b></div>
+        </div>
+        <div id="adminGeralListaClinicas" class="admin-geral-lista"></div>
+        <div id="adminGeralEditorSistema" class="admin-geral-editor" style="display:none">
+          <h4>Alterar plano da clínica selecionada</h4>
+          <input id="adminGeralClinicaId" type="hidden">
+          <div class="plano-admin-grid">
+            <label>Clínica
+              <input id="adminGeralClinicaNome" readonly>
+            </label>
+            <label>Plano
+              <select id="adminGeralPlanoSelect">
+                <option value="">Carregue os planos...</option>
+              </select>
+            </label>
+            <label>Cobrança
+              <select id="adminGeralCiclo">
+                <option value="monthly">Mensal</option>
+                <option value="yearly">Anual</option>
+              </select>
+            </label>
+            <label>Situação
+              <select id="adminGeralStatusPlano">
+                <option value="trialing">Teste</option>
+                <option value="active">Ativo</option>
+                <option value="past_due">Pagamento pendente</option>
+                <option value="grace">Prazo de regularizacao</option>
+                <option value="suspended">Suspenso</option>
+                <option value="canceled">Cancelado</option>
+              </select>
+            </label>
+            <label>Fim do período
+              <input id="adminGeralFimPeriodo" type="date">
+            </label>
+            <label>Fim do teste
+              <input id="adminGeralFimTeste" type="date">
+            </label>
+            <label>Fim da tolerância
+              <input id="adminGeralFimTolerancia" type="date">
+            </label>
+          </div>
+          <div class="plano-admin-acoes">
+            <button class="btn-main" type="button" onclick="salvarAdminGeralPlanoSistema()">Salvar alteração da clínica</button>
+            <button class="btn-light" type="button" onclick="marcarAdminGeralStatusSistema('active')">Marcar ativo</button>
+            <button class="btn-light" type="button" onclick="marcarAdminGeralStatusSistema('suspended')">Suspender</button>
+            <button class="btn-light" type="button" onclick="marcarAdminGeralStatusSistema('past_due')">Pendente</button>
+          </div>
+          <div id="adminGeralEditorStatusSistema" class="msg">Selecione uma clínica na lista.</div>
         </div>
       </section>
       <div class="config-grid-pro">
@@ -12868,9 +12982,188 @@ async function salvarAdminPlanoClinicaSistema(){
     return false;
   }
 }
+let adminGeralClinicasCacheSistema=[];
+async function garantirPlanosComerciaisSistema(db){
+  if(planosComerciaisCacheSistema.length) return planosComerciaisCacheSistema;
+  const planosResp=await consultaOnlineComTempoSistema(
+    db.from("commercial_plans").select("id,code,name,active").eq("active",true).order("name"),
+    "Consulta dos planos comerciais",
+    20
+  );
+  if(planosResp.error) throw planosResp.error;
+  planosComerciaisCacheSistema=planosResp.data || [];
+  return planosComerciaisCacheSistema;
+}
+function preencherSelectPlanosAdminGeralSistema(selecionadoId=""){
+  const select=document.getElementById("adminGeralPlanoSelect");
+  if(!select) return;
+  const lista=(planosComerciaisCacheSistema || []).filter(p=>p && p.id);
+  if(!lista.length){
+    select.innerHTML='<option value="">Nenhum plano encontrado</option>';
+    return;
+  }
+  select.innerHTML=lista.map(p=>{
+    const selecionado=String(p.id)===String(selecionadoId) ? " selected" : "";
+    return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${escapeHtmlText(p.name || p.code || "Plano")}</option>`;
+  }).join("");
+}
+function assinaturaAdminGeralComoPlanoSistema(item={}){
+  return {
+    id:item.clinic_id,
+    status:item.subscription_status,
+    current_period_end:item.current_period_end,
+    trial_ends_at:item.trial_ends_at,
+    grace_ends_at:item.grace_ends_at
+  };
+}
+function atualizarResumoAdminGeralSistema(lista=[]){
+  const total=lista.length;
+  let ativas=0,atencao=0,bloqueadas=0;
+  lista.forEach(item=>{
+    const regra=avaliarAcessoPlanoComercialSistema(assinaturaAdminGeralComoPlanoSistema(item));
+    if(regra.bloqueado) bloqueadas++;
+    else if(regra.alerta) atencao++;
+    else ativas++;
+  });
+  const set=(id,valor)=>{const el=document.getElementById(id); if(el) el.innerText=valor;};
+  set("adminGeralTotalClinicas",total);
+  set("adminGeralAtivas",ativas);
+  set("adminGeralAtencao",atencao);
+  set("adminGeralBloqueadas",bloqueadas);
+}
+function renderAdminGeralClinicasSistema(lista=[]){
+  const box=document.getElementById("adminGeralListaClinicas");
+  if(!box) return;
+  atualizarResumoAdminGeralSistema(lista);
+  if(!lista.length){
+    box.innerHTML='<div class="msg">Nenhuma clínica encontrada.</div>';
+    return;
+  }
+  box.innerHTML=lista.map((item,idx)=>{
+    const regra=avaliarAcessoPlanoComercialSistema(assinaturaAdminGeralComoPlanoSistema(item));
+    const status=item.subscription_status || "sem plano";
+    const classe=regra.bloqueado ? "bloqueado" : (regra.alerta ? "alerta" : "ativo");
+    return `<div class="admin-geral-clinica">
+      <div><strong>${escapeHtmlText(item.clinic_name || "Clínica")}</strong><small>${escapeHtmlText(item.clinic_id || "")}</small></div>
+      <div><small>Plano</small><strong>${escapeHtmlText(item.plan_name || "Sem plano")}</strong></div>
+      <div><small>Cobrança</small><strong>${escapeHtmlText(rotuloCicloPlanoSistema(item.billing_cycle))}</strong></div>
+      <div><small>Situação</small><span class="plano-comercial-status ${classe}">${escapeHtmlText(rotuloStatusPlanoSistema(status))}</span></div>
+      <div><small>Pacientes / usuários</small><strong>${Number(item.patients_count || 0)} / ${Number(item.profiles_count || 0)}</strong></div>
+      <button class="btn-light" type="button" onclick="selecionarAdminGeralClinicaSistema(${idx})">Selecionar</button>
+    </div>`;
+  }).join("");
+}
+async function carregarAdminGeralSistema(mostrarAviso=false){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminGeralStatusSistema");
+  if(!db){
+    if(msg) msg.innerText="Conecte o Supabase antes de abrir o painel geral.";
+    return false;
+  }
+  try{
+    if(msg) msg.innerText="Carregando painel geral...";
+    await garantirPlanosComerciaisSistema(db);
+    preencherSelectPlanosAdminGeralSistema();
+    const resp=await consultaOnlineComTempoSistema(
+      db.rpc("platform_admin_list_clinics"),
+      "Consulta do painel geral",
+      25
+    );
+    if(resp.error) throw resp.error;
+    adminGeralClinicasCacheSistema=resp.data || [];
+    renderAdminGeralClinicasSistema(adminGeralClinicasCacheSistema);
+    if(msg) msg.innerText="Painel geral carregado. Selecione uma clínica para alterar plano, cobrança ou situação.";
+    return true;
+  }catch(e){
+    console.warn("Painel administrador geral:",e);
+    if(msg) msg.innerText="Não foi possível carregar o painel geral: "+textoErroOnlineSistema(e)+". Execute a etapa SQL 9 e confirme que seu usuário está como superadmin.";
+    if(mostrarAviso) alert("Não foi possível carregar o painel geral.\n\nExecute a etapa SQL 9 e marque seu usuário online como superadmin.");
+    return false;
+  }
+}
+function limparEditorAdminGeralSistema(){
+  const editor=document.getElementById("adminGeralEditorSistema");
+  if(editor) editor.style.display="none";
+  const status=document.getElementById("adminGeralEditorStatusSistema");
+  if(status) status.innerText="Selecione uma clínica na lista.";
+}
+function selecionarAdminGeralClinicaSistema(idx){
+  const item=adminGeralClinicasCacheSistema[idx];
+  if(!item) return;
+  const editor=document.getElementById("adminGeralEditorSistema");
+  if(editor) editor.style.display="block";
+  preencherSelectPlanosAdminGeralSistema(item.plan_id || planosComerciaisCacheSistema[0]?.id || "");
+  const set=(id,valor)=>{const el=document.getElementById(id); if(el) el.value=valor || "";};
+  set("adminGeralClinicaId",item.clinic_id);
+  set("adminGeralClinicaNome",item.clinic_name);
+  set("adminGeralPlanoSelect",item.plan_id || planosComerciaisCacheSistema[0]?.id || "");
+  set("adminGeralCiclo",item.billing_cycle || "monthly");
+  set("adminGeralStatusPlano",item.subscription_status || "active");
+  set("adminGeralFimPeriodo",valorDataInputPlanoSistema(item.current_period_end));
+  set("adminGeralFimTeste",valorDataInputPlanoSistema(item.trial_ends_at));
+  set("adminGeralFimTolerancia",valorDataInputPlanoSistema(item.grace_ends_at));
+  const status=document.getElementById("adminGeralEditorStatusSistema");
+  if(status) status.innerText="Clínica selecionada. Ajuste os campos e salve.";
+}
+async function salvarAdminGeralPlanoSistema(){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminGeralEditorStatusSistema");
+  if(!db){
+    if(msg) msg.innerText="Conecte o Supabase antes de salvar.";
+    return false;
+  }
+  try{
+    const clinicId=document.getElementById("adminGeralClinicaId")?.value || "";
+    const planId=document.getElementById("adminGeralPlanoSelect")?.value || "";
+    if(!clinicId) throw new Error("Selecione uma clínica.");
+    if(!planId) throw new Error("Selecione um plano.");
+    if(msg) msg.innerText="Salvando alteração da clínica...";
+    const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
+    const sessao=sessaoResp?.data?.session;
+    const payload={
+      p_clinic_id:clinicId,
+      p_plan_id:planId,
+      p_billing_cycle:document.getElementById("adminGeralCiclo")?.value || "monthly",
+      p_status:document.getElementById("adminGeralStatusPlano")?.value || "active",
+      p_current_period_start:new Date().toISOString(),
+      p_current_period_end:valorIsoFimDiaPlanoSistema(document.getElementById("adminGeralFimPeriodo")?.value),
+      p_trial_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("adminGeralFimTeste")?.value),
+      p_grace_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("adminGeralFimTolerancia")?.value),
+      p_metadata:{
+        source:"platform_admin_panel",
+        updated_by:sessao?.user?.email || "superadmin",
+        updated_at:new Date().toISOString()
+      }
+    };
+    const resp=await consultaOnlineComTempoSistema(
+      db.rpc("platform_admin_save_clinic_subscription",payload),
+      "Salvar alteração no painel geral",
+      25
+    );
+    if(resp.error) throw resp.error;
+    if(msg) msg.innerText="Alteração salva com sucesso no painel geral.";
+    await carregarAdminGeralSistema(false);
+    await carregarPlanoClinicaOnlineSistema(false);
+    return true;
+  }catch(e){
+    console.warn("Salvar painel geral:",e);
+    if(msg) msg.innerText="Não foi possível salvar: "+textoErroOnlineSistema(e);
+    return false;
+  }
+}
+async function marcarAdminGeralStatusSistema(status){
+  const campo=document.getElementById("adminGeralStatusPlano");
+  if(campo) campo.value=status;
+  await salvarAdminGeralPlanoSistema();
+}
 window.carregarPlanoClinicaOnlineSistema=carregarPlanoClinicaOnlineSistema;
 window.carregarAdminPlanoClinicaSistema=carregarAdminPlanoClinicaSistema;
 window.salvarAdminPlanoClinicaSistema=salvarAdminPlanoClinicaSistema;
+window.carregarAdminGeralSistema=carregarAdminGeralSistema;
+window.limparEditorAdminGeralSistema=limparEditorAdminGeralSistema;
+window.selecionarAdminGeralClinicaSistema=selecionarAdminGeralClinicaSistema;
+window.salvarAdminGeralPlanoSistema=salvarAdminGeralPlanoSistema;
+window.marcarAdminGeralStatusSistema=marcarAdminGeralStatusSistema;
 async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){
   let timer=null;
   try{

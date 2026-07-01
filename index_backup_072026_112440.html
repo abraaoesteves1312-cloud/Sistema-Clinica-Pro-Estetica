@@ -5199,19 +5199,18 @@ function atualizarPermissoesUsuarioConfig(campo){
   });
 }
 
-function adicionarUsuarioConfig(nome="", email="", senha="", perfil="Funcionario", acessos=null, senhaHash="", senhaLegado="", ativo=true){
+function adicionarUsuarioConfig(nome="", email="", senha="", perfil="Funcionario", acessos=null){
   montarTelaConfig();
   const area = document.getElementById("configUsuariosLista");
   if(!area) return;
   const perfilNormalizado=perfilUsuarioSistema({perfil});
   area.insertAdjacentHTML("beforeend",`
-    <div class="config-linha-usuario ${perfilNormalizado==="Administrador"?"usuario-admin":""}" data-email-original="${escapeHtmlAttr(email)}" data-senha-hash="${escapeHtmlAttr(senhaHash || "")}" data-senha-legado="${escapeHtmlAttr(senhaLegado || senha || "")}">
+    <div class="config-linha-usuario ${perfilNormalizado==="Administrador"?"usuario-admin":""}">
       <div class="config-user-campos">
         <input class="config-user-nome" placeholder="Nome do usuario" value="${escapeHtmlAttr(nome)}">
         <input class="config-user-email" placeholder="E-mail de acesso" value="${escapeHtmlAttr(email)}">
-        <input class="config-user-senha" type="password" placeholder="${senhaHash || senhaLegado ? "Nova senha, se quiser trocar" : "Senha"}" value="">
+        <input class="config-user-senha" type="password" placeholder="Senha" value="${escapeHtmlAttr(senha)}">
         <select class="config-user-perfil" onchange="atualizarPermissoesUsuarioConfig(this)">${opcoesPerfilUsuarioConfig(perfilNormalizado)}</select>
-        <label class="config-acesso-opcao config-user-status"><input class="config-user-ativo" type="checkbox"${ativo!==false?" checked":""}> Ativo</label>
         <button class="btn-light" type="button" onclick="removerLinhaConfig(this)">Remover</button>
       </div>
       <div class="config-user-acessos">
@@ -5226,9 +5225,8 @@ function renderConfigUsuarios(lista){
   const area = document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML = "";
-  let base = mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista) ? lista : []);
-  if(!base.length) base=[{nome:"Administrador", email:"", senha:"", perfil:"Administrador", acessos:todosAcessosSistema(), ativo:true}];
-  base.forEach(u=>adicionarUsuarioConfig(u.nome || "", u.email || "", "", u.perfil || "Administrador", u.acessos || null, u.senhaHash || "", u.senha || "", u.ativo!==false));
+  const base = Array.isArray(lista) && lista.length ? lista : [{nome:"Administrador", email:"", senha:"", perfil:"Administrador", acessos:todosAcessosSistema()}];
+  base.forEach(u=>adicionarUsuarioConfig(u.nome || "", u.email || "", u.senha || "", u.perfil || "Administrador", u.acessos || null));
 }
 
 function removerLinhaConfig(botao){
@@ -5255,8 +5253,7 @@ function coletarUsuariosConfig(){
   })).filter(u=>u.email && u.senha);
 }
 
-async function salvarConfig(){
-  if(typeof salvarConfigUsuariosSeguroSistema==="function") return salvarConfigUsuariosSeguroSistema();
+function salvarConfig(){
   montarTelaConfig();
   const conf = {
     clinica:document.getElementById("confClinica")?.value || "",
@@ -5266,7 +5263,7 @@ async function salvarConfig(){
     profissionais:coletarProfissionaisConfig(),
     usuarios:coletarUsuariosConfig()
   };
-  salvarConfigSistemaSeguro(conf);
+  localStorage.setItem("gepV2_config",JSON.stringify(conf));
   if(document.getElementById("msgConfig")) msgConfig.innerText="Configuracoes salvas.";
   try{renderProcedimentosAgenda();renderCalendarioAgenda();renderHorariosSeguro();}catch(e){}
 }
@@ -12239,8 +12236,7 @@ function mesclarUsuariosAcessoSistema(...listas){
     if(!u) return;
     const email=String(u.email || "").trim().toLowerCase();
     if(!email || !(u.senhaHash || u.senha)) return;
-    const atual=mapa.get(email) || {};
-    mapa.set(email,{...atual,...u,email});
+    mapa.set(email,{...u,email});
   });
   return [...mapa.values()];
 }
@@ -12399,8 +12395,7 @@ window.renderConfigUsuarios = function(lista){
   const area=document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML="";
-  let base=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista)?lista:[]);
-  if(!base.length) base=[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true}];
+  const base=Array.isArray(lista)&&lista.length?[...lista]:[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()}];
   const atual=usuarioAtualSistema();
   const emailAtual=String(atual && atual.email || "").trim().toLowerCase();
   const existeAtual=emailAtual && base.some(u=>String(u && u.email || "").trim().toLowerCase()===emailAtual);
@@ -12440,7 +12435,7 @@ window.coletarUsuariosConfig = async function(){
   }
   return usuarios;
 };
-async function salvarConfigUsuariosSeguroSistema(){
+window.salvarConfig = async function(){
   montarTelaConfig();
   const confAtual=configSistemaSeguro();
   let usuarios=[];
@@ -12452,9 +12447,8 @@ async function salvarConfigUsuariosSeguroSistema(){
     alert(e.message || "Confira os usuários antes de salvar.");
     return;
   }
-  usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(confAtual.usuarios)?confAtual.usuarios:[], usuarios);
   const emailsSalvos=new Set(usuarios.map(u=>String(u.email || "").trim().toLowerCase()).filter(Boolean));
-  const adminsExistentes=usuarios.filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
+  const adminsExistentes=(Array.isArray(confAtual.usuarios)?confAtual.usuarios:[]).filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
   adminsExistentes.forEach(admin=>{
     const emailAdmin=String(admin.email || "").trim().toLowerCase();
     if(emailAdmin && !emailsSalvos.has(emailAdmin)){
@@ -12489,8 +12483,7 @@ async function salvarConfigUsuariosSeguroSistema(){
   }
   try{renderProcedimentosAgenda();renderCalendarioAgenda();renderHorariosSeguro();}catch(e){}
   renderConfig();
-}
-window.salvarConfig = salvarConfigUsuariosSeguroSistema;
+};
 function configOnlineSistema(){
   const conf=configSistemaSeguro();
   return conf.online || {};

@@ -4896,7 +4896,10 @@ function salvarMapaBotox(){
 function salvarFoto(){ salvarFotoArquivoPaciente(); }
 function salvarEstoque(){let a=get("estoque");a.push({id:Date.now(),nome:estNome.value,lote:estLote.value,validade:estValidade.value,un:estUn.value,qtd:+estQtd.value||0,min:+estMin.value||0,custo:+estCusto.value||0});set("estoque",a);[estNome,estLote,estValidade,estQtd,estMin,estCusto].forEach(i=>i.value="");atualizarTudo()}
 function configSistema(){
-  try{return JSON.parse(localStorage.getItem("gepV2_config") || "{}")}catch(e){return {}}
+  let conf={};
+  try{conf=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){conf={}}
+  conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(conf.usuarios)?conf.usuarios:[]);
+  return conf;
 }
 
 function montarTelaConfig(){
@@ -12212,10 +12215,30 @@ async function senhaHashSistemaProfissional(email,senha){
   }
 }
 function configSistemaSeguro(){
-  try{return JSON.parse(localStorage.getItem("gepV2_config") || "{}")}catch(e){return {}}
+  return configSistema();
 }
 function salvarConfigSistemaSeguro(conf){
-  localStorage.setItem("gepV2_config",JSON.stringify(conf || {}));
+  const final={...(conf || {})};
+  final.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(final.usuarios)?final.usuarios:[]);
+  localStorage.setItem("gepV2_config",JSON.stringify(final));
+  salvarBackupAcessoSistema(final.usuarios);
+}
+function usuariosBackupAcessoSistema(){
+  try{return JSON.parse(localStorage.getItem("gepV2_usuarios_acesso") || "[]") || []}catch(e){return []}
+}
+function salvarBackupAcessoSistema(usuarios){
+  const lista=mesclarUsuariosAcessoSistema(Array.isArray(usuarios)?usuarios:[]);
+  localStorage.setItem("gepV2_usuarios_acesso",JSON.stringify(lista));
+}
+function mesclarUsuariosAcessoSistema(...listas){
+  const mapa=new Map();
+  listas.flat().forEach(u=>{
+    if(!u) return;
+    const email=String(u.email || "").trim().toLowerCase();
+    if(!email || !(u.senhaHash || u.senha)) return;
+    mapa.set(email,{...u,email});
+  });
+  return [...mapa.values()];
 }
 function usuariosConfigSistema(){
   const conf=configSistemaSeguro();

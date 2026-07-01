@@ -12255,18 +12255,18 @@ function existeUsuarioConfigValidoLocal(conf){
 async function autenticarUsuarioConfigLocal(email,senha){
   const conf=configSistemaSeguro();
   const usuarios=Array.isArray(conf.usuarios)?conf.usuarios:[];
-  const usuario=usuarios.find(u=>String(u.email||"").trim().toLowerCase()===email);
-  if(!usuario) return null;
-  if(usuario.ativo===false) return null;
-  if(usuario.senhaHash){
-    const hash=await senhaHashSistemaProfissional(email,senha);
-    return hash===usuario.senhaHash ? usuario : null;
-  }
-  if(usuario.senha && String(usuario.senha)===senha){
-    usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
-    delete usuario.senha;
-    salvarConfigSistemaSeguro(conf);
-    return usuario;
+  const encontrados=usuarios.filter(u=>String(u.email||"").trim().toLowerCase()===email);
+  if(!encontrados.length) return null;
+  const hash=await senhaHashSistemaProfissional(email,senha);
+  for(const usuario of encontrados){
+    if(usuario.ativo===false) continue;
+    if(usuario.senhaHash && hash===usuario.senhaHash) return usuario;
+    if(usuario.senha && String(usuario.senha)===senha){
+      usuario.senhaHash=hash;
+      delete usuario.senha;
+      salvarConfigSistemaSeguro(conf);
+      return usuario;
+    }
   }
   return null;
 }
@@ -12395,7 +12395,12 @@ window.coletarUsuariosConfig = async function(){
     if(!email) continue;
     if(senha) senhaHash=await senhaHashSistemaProfissional(email,senha);
     else if(!senhaHash && senhaLegado && email===emailOriginal) senhaHash=await senhaHashSistemaProfissional(email,senhaLegado);
-    if(!senhaHash) continue;
+    if(!senhaHash){
+      linha.style.outline="3px solid rgba(184,75,75,.35)";
+      const nomeAviso=nome || email || "usuário";
+      throw new Error(`Informe a senha do ${nomeAviso} antes de salvar.`);
+    }
+    linha.style.outline="";
     usuarios.push({
       nome,
       email,
@@ -12410,7 +12415,15 @@ window.coletarUsuariosConfig = async function(){
 window.salvarConfig = async function(){
   montarTelaConfig();
   const confAtual=configSistemaSeguro();
-  let usuarios=await coletarUsuariosConfig();
+  let usuarios=[];
+  try{
+    usuarios=await coletarUsuariosConfig();
+  }catch(e){
+    const msg=document.getElementById("msgConfig");
+    if(msg) msg.innerText=e.message || "Confira os usuários antes de salvar.";
+    alert(e.message || "Confira os usuários antes de salvar.");
+    return;
+  }
   const emailsSalvos=new Set(usuarios.map(u=>String(u.email || "").trim().toLowerCase()).filter(Boolean));
   const adminsExistentes=(Array.isArray(confAtual.usuarios)?confAtual.usuarios:[]).filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
   adminsExistentes.forEach(admin=>{
@@ -12441,7 +12454,10 @@ window.salvarConfig = async function(){
   };
   salvarConfigSistemaSeguro(conf);
   const msg=document.getElementById("msgConfig");
-  if(msg) msg.innerText="Configurações salvas com acesso profissional local.";
+  if(msg){
+    const resumoUsuarios=usuarios.map(u=>u.email || u.nome).filter(Boolean).join(", ");
+    msg.innerText=`Configurações salvas. Usuários gravados: ${resumoUsuarios || "nenhum"}.`;
+  }
   try{renderProcedimentosAgenda();renderCalendarioAgenda();renderHorariosSeguro();}catch(e){}
   renderConfig();
 };

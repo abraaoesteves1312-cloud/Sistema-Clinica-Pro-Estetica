@@ -12368,7 +12368,7 @@ function prepararLoginProfissional(){
     form.insertAdjacentHTML("afterbegin",`<div id="loginAvisoProfissional" class="msg" style="margin-bottom:12px;text-align:left">Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.</div>`);
   }
   if(!document.getElementById("btnRecuperarAcessoLocal")){
-    form.insertAdjacentHTML("beforeend",`<button id="btnRecuperarAcessoLocal" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="redefinirAcessoAdministradorLocal()">Recuperar acesso local</button><div class="msg" style="font-size:12px">Use este botão somente se o e-mail/senha não entrarem. Ele recria o administrador deste computador sem apagar pacientes, prontuários ou financeiro.</div>`);
+    form.insertAdjacentHTML("beforeend",`<button id="btnRecuperarAcessoLocal" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="redefinirAcessoAdministradorLocal()">Recriar administrador local</button><div class="msg" style="font-size:12px">Use somente para recuperar o acesso deste computador. Não altera senha online e não apaga pacientes, prontuários ou financeiro.</div>`);
   }
 }
 function usuarioConfigValidoLocal(u){
@@ -12417,6 +12417,70 @@ async function criarPrimeiroAdministradorLocal(email,senha){
   salvarConfigSistemaSeguro(conf);
   return usuario;
 }
+async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
+  const db=clienteSupabaseSistema();
+  if(!db) return null;
+  window.__ultimoErroLoginOnlineSistema="";
+  try{
+    const login=await promessaComTempoSistema(
+      db.auth.signInWithPassword({email,password:senha}),
+      "Login online",
+      18
+    );
+    if(login.error){
+      window.__ultimoErroLoginOnlineSistema=login.error.message || "erro no login online";
+      return null;
+    }
+    const sessao=login.data?.session;
+    if(!sessao?.user?.id) return null;
+    const perfilResp=await consultaOnlineComTempoSistema(
+      db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle(),
+      "Consulta do perfil online",
+      18
+    );
+    if(perfilResp.error) throw perfilResp.error;
+    const perfil=perfilResp.data;
+    if(!perfil?.clinic_id){
+      window.__ultimoErroLoginOnlineSistema="Usuário online sem clínica vinculada.";
+      return null;
+    }
+    if(perfil.active===false){
+      window.__ultimoErroLoginOnlineSistema="Usuário online inativo.";
+      return null;
+    }
+    const clinicaResp=await consultaOnlineComTempoSistema(
+      db.from("clinics").select("name").eq("id",perfil.clinic_id).maybeSingle(),
+      "Consulta da clínica online",
+      18
+    );
+    if(clinicaResp.error) throw clinicaResp.error;
+    const nomeClinica=clinicaResp.data?.name || "Clínica online";
+    const perfilNome=perfilUsuarioSistema({perfil:perfil.role || "Administrador"});
+    const usuario={
+      nome:perfil.full_name || email,
+      email,
+      perfil:perfil.role || perfilNome,
+      acessos:acessosPerfilSistema(perfil.role || "Administrador"),
+      ativo:true,
+      senhaHash:await senhaHashSistemaProfissional(email,senha),
+      onlineUserId:sessao.user.id,
+      onlineClinicId:perfil.clinic_id
+    };
+    const conf=configSistemaSeguro();
+    conf.clinica=nomeClinica;
+    conf.online=conf.online || {};
+    conf.online.ativo=true;
+    conf.online.clinicId=perfil.clinic_id;
+    const usuarios=Array.isArray(conf.usuarios) ? conf.usuarios.filter(u=>String(u.email || "").trim().toLowerCase()!==email) : [];
+    conf.usuarios=[usuario,...usuarios];
+    salvarConfigSistemaSeguro(conf);
+    return usuario;
+  }catch(e){
+    console.warn("Login online como local:",e);
+    window.__ultimoErroLoginOnlineSistema=textoErroOnlineSistema(e);
+    return null;
+  }
+}
 window.redefinirAcessoAdministradorLocal = async function(){
   prepararLoginProfissional();
   const email=(document.getElementById("emailLogin")?.value || "").trim().toLowerCase();
@@ -12425,10 +12489,10 @@ window.redefinirAcessoAdministradorLocal = async function(){
     mensagemLoginProfissional("Digite o e-mail e a nova senha antes de recuperar o acesso.");
     return;
   }
-  const ok=confirm("Recuperar acesso local?\n\nIsso vai recriar o administrador deste computador com o e-mail e senha informados. Os pacientes, prontuários, fotos, agenda, financeiro e estoque serão mantidos.");
+  const ok=confirm("Recriar administrador local?\n\nIsso recria o administrador somente neste computador com o e-mail e senha informados. Os pacientes, prontuários, fotos, agenda, financeiro e estoque serão mantidos.");
   if(!ok) return;
   const usuario=await criarPrimeiroAdministradorLocal(email,senha);
-  mensagemLoginProfissional("Acesso administrador recriado. Agora clique em Entrar.");
+  mensagemLoginProfissional("Administrador local recriado. Agora clique em Entrar.");
   try{definirUsuarioAtualSistema(usuario);}catch(e){}
 };
 window.entrarSistema = async function(){
@@ -12446,9 +12510,14 @@ window.entrarSistema = async function(){
     mensagemLoginProfissional("Administrador criado com sucesso.");
   }else{
     usuario=await autenticarUsuarioConfigLocal(email,senha);
+    if(!usuario){
+      mensagemLoginProfissional("Acesso local não encontrado. Tentando acesso online...");
+      usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
+    }
   }
   if(!usuario){
-    mensagemLoginProfissional("E-mail ou senha inválidos.");
+    const detalhe=window.__ultimoErroLoginOnlineSistema ? " Online: "+window.__ultimoErroLoginOnlineSistema : "";
+    mensagemLoginProfissional("E-mail ou senha inválidos."+detalhe);
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
@@ -13342,7 +13411,7 @@ async function criarAdminGeralClinicaSistema(){
     const get=id=>(document.getElementById(id)?.value || "").trim();
     const nome=get("adminNovaClinicaNome");
     const responsavel=get("adminNovaClinicaResponsavel") || "Administrador";
-    const email=get("adminNovaClinicaEmail").toLowerCase();
+    const email=get("adminNovaClinicaEmail").toLowerCase().replace(/^[^a-z0-9]+/i,"");
     const senha=get("adminNovaClinicaSenha");
     const planId=get("adminNovaClinicaPlano");
     if(!nome) throw new Error("Informe o nome da clínica.");

@@ -2051,6 +2051,15 @@ body > #resultadoPacientes{
   background:rgba(255,255,255,.72);
 }
 .admin-geral-editor h4{margin:0 0 8px;color:var(--gold)}
+.admin-geral-criacao{
+  margin-top:12px;
+  padding:12px;
+  border:1px solid rgba(184,122,71,.26);
+  border-radius:16px;
+  background:rgba(255,255,255,.82);
+}
+.admin-geral-criacao h4{margin:0 0 6px;color:var(--gold)}
+.admin-geral-criacao p{margin:0 0 10px;color:var(--muted);font-size:13px}
 .online-central-grid{
   display:grid;
   grid-template-columns:repeat(3,1fr);
@@ -5076,6 +5085,64 @@ function montarTelaConfig(){
           <button class="btn-light" type="button" onclick="limparEditorAdminGeralSistema()">Limpar seleção</button>
         </div>
         <div id="adminGeralStatusSistema" class="msg">Execute a etapa SQL 9 e entre com um usuário superadmin para carregar este painel.</div>
+        <div class="admin-geral-criacao">
+          <h4>Cadastrar nova clínica</h4>
+          <p>Crie uma clínica nova com acesso inicial, plano comercial e datas de assinatura.</p>
+          <div class="plano-admin-grid">
+            <label>Nome da clínica
+              <input id="adminNovaClinicaNome" placeholder="Ex.: Clínica Modelo">
+            </label>
+            <label>Responsável
+              <input id="adminNovaClinicaResponsavel" placeholder="Nome do administrador">
+            </label>
+            <label>E-mail de acesso
+              <input id="adminNovaClinicaEmail" type="email" placeholder="email@clinica.com">
+            </label>
+            <label>WhatsApp
+              <input id="adminNovaClinicaWhats" placeholder="(00) 00000-0000">
+            </label>
+            <label>Senha inicial
+              <input id="adminNovaClinicaSenha" type="password" placeholder="Mínimo 6 caracteres">
+            </label>
+            <label>Plano
+              <select id="adminNovaClinicaPlano">
+                <option value="">Carregue os planos...</option>
+              </select>
+            </label>
+            <label>Cobrança
+              <select id="adminNovaClinicaCiclo">
+                <option value="monthly">Mensal</option>
+                <option value="yearly">Anual</option>
+              </select>
+            </label>
+            <label>Situação
+              <select id="adminNovaClinicaStatus">
+                <option value="trialing">Teste</option>
+                <option value="active">Ativo</option>
+                <option value="past_due">Pagamento pendente</option>
+                <option value="grace">Prazo de regularizacao</option>
+                <option value="suspended">Suspenso</option>
+              </select>
+            </label>
+            <label>Início
+              <input id="adminNovaClinicaInicio" type="date">
+            </label>
+            <label>Fim do período
+              <input id="adminNovaClinicaPeriodoFim" type="date">
+            </label>
+            <label>Fim do teste
+              <input id="adminNovaClinicaTesteFim" type="date">
+            </label>
+            <label>Fim da tolerância
+              <input id="adminNovaClinicaToleranciaFim" type="date">
+            </label>
+          </div>
+          <div class="plano-admin-acoes">
+            <button class="btn-main" type="button" onclick="criarAdminGeralClinicaSistema()">Criar clínica</button>
+            <button class="btn-light" type="button" onclick="limparNovaClinicaAdminGeralSistema()">Limpar cadastro</button>
+          </div>
+          <div id="adminNovaClinicaStatusSistema" class="msg">Preencha os dados da nova clínica e clique em criar.</div>
+        </div>
         <div class="admin-geral-grid">
           <div class="admin-geral-stat"><span>Total de clínicas</span><b id="adminGeralTotalClinicas">0</b></div>
           <div class="admin-geral-stat"><span>Ativas</span><b id="adminGeralAtivas">0</b></div>
@@ -13105,17 +13172,64 @@ async function garantirPlanosComerciaisSistema(db){
   return planosComerciaisCacheSistema;
 }
 function preencherSelectPlanosAdminGeralSistema(selecionadoId=""){
-  const select=document.getElementById("adminGeralPlanoSelect");
-  if(!select) return;
+  const selects=[
+    document.getElementById("adminGeralPlanoSelect"),
+    document.getElementById("adminNovaClinicaPlano")
+  ].filter(Boolean);
+  if(!selects.length) return;
   const lista=(planosComerciaisCacheSistema || []).filter(p=>p && p.id);
   if(!lista.length){
-    select.innerHTML='<option value="">Nenhum plano encontrado</option>';
+    selects.forEach(select=>{select.innerHTML='<option value="">Nenhum plano encontrado</option>';});
     return;
   }
-  select.innerHTML=lista.map(p=>{
-    const selecionado=String(p.id)===String(selecionadoId) ? " selected" : "";
-    return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${escapeHtmlText(p.name || p.code || "Plano")}</option>`;
-  }).join("");
+  selects.forEach(select=>{
+    const valorAtual=select.id==="adminGeralPlanoSelect" ? selecionadoId : (select.value || selecionadoId || lista[0]?.id || "");
+    select.innerHTML=lista.map(p=>{
+      const selecionado=String(p.id)===String(valorAtual) ? " selected" : "";
+      return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${escapeHtmlText(p.name || p.code || "Plano")}</option>`;
+    }).join("");
+  });
+}
+function dataInputAdminGeralSistema(data){
+  return data.toISOString().slice(0,10);
+}
+function somarDiasAdminGeralSistema(dias){
+  const data=new Date();
+  data.setDate(data.getDate()+Number(dias || 0));
+  return dataInputAdminGeralSistema(data);
+}
+function preencherDatasNovaClinicaAdminGeralSistema(){
+  const defaults={
+    adminNovaClinicaInicio:somarDiasAdminGeralSistema(0),
+    adminNovaClinicaPeriodoFim:somarDiasAdminGeralSistema(30),
+    adminNovaClinicaTesteFim:somarDiasAdminGeralSistema(7),
+    adminNovaClinicaToleranciaFim:somarDiasAdminGeralSistema(35)
+  };
+  Object.entries(defaults).forEach(([id,valor])=>{
+    const el=document.getElementById(id);
+    if(el && !el.value) el.value=valor;
+  });
+}
+function limparNovaClinicaAdminGeralSistema(){
+  [
+    "adminNovaClinicaNome",
+    "adminNovaClinicaResponsavel",
+    "adminNovaClinicaEmail",
+    "adminNovaClinicaWhats",
+    "adminNovaClinicaSenha"
+  ].forEach(id=>{const el=document.getElementById(id); if(el) el.value="";});
+  const ciclo=document.getElementById("adminNovaClinicaCiclo");
+  if(ciclo) ciclo.value="monthly";
+  const status=document.getElementById("adminNovaClinicaStatus");
+  if(status) status.value="trialing";
+  ["adminNovaClinicaInicio","adminNovaClinicaPeriodoFim","adminNovaClinicaTesteFim","adminNovaClinicaToleranciaFim"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value="";
+  });
+  preencherDatasNovaClinicaAdminGeralSistema();
+  preencherSelectPlanosAdminGeralSistema();
+  const msg=document.getElementById("adminNovaClinicaStatusSistema");
+  if(msg) msg.innerText="Preencha os dados da nova clínica e clique em criar.";
 }
 function assinaturaAdminGeralComoPlanoSistema(item={}){
   return {
@@ -13174,6 +13288,7 @@ async function carregarAdminGeralSistema(mostrarAviso=false){
     if(msg) msg.innerText="Carregando painel geral...";
     await garantirPlanosComerciaisSistema(db);
     preencherSelectPlanosAdminGeralSistema();
+    preencherDatasNovaClinicaAdminGeralSistema();
     const resp=await consultaOnlineComTempoSistema(
       db.rpc("platform_admin_list_clinics"),
       "Consulta do painel geral",
@@ -13214,6 +13329,68 @@ function selecionarAdminGeralClinicaSistema(idx){
   set("adminGeralFimTolerancia",valorDataInputPlanoSistema(item.grace_ends_at));
   const status=document.getElementById("adminGeralEditorStatusSistema");
   if(status) status.innerText="Clínica selecionada. Ajuste os campos e salve.";
+}
+async function criarAdminGeralClinicaSistema(){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminNovaClinicaStatusSistema");
+  if(!db){
+    if(msg) msg.innerText="Conecte o Supabase antes de criar a clínica.";
+    return false;
+  }
+  try{
+    preencherDatasNovaClinicaAdminGeralSistema();
+    const get=id=>(document.getElementById(id)?.value || "").trim();
+    const nome=get("adminNovaClinicaNome");
+    const responsavel=get("adminNovaClinicaResponsavel") || "Administrador";
+    const email=get("adminNovaClinicaEmail").toLowerCase();
+    const senha=get("adminNovaClinicaSenha");
+    const planId=get("adminNovaClinicaPlano");
+    if(!nome) throw new Error("Informe o nome da clínica.");
+    if(!email || !email.includes("@")) throw new Error("Informe um e-mail válido.");
+    if(!senha || senha.length<6) throw new Error("Informe uma senha com pelo menos 6 caracteres.");
+    if(!planId) throw new Error("Selecione um plano.");
+    if(msg) msg.innerText="Criando clínica e acesso inicial...";
+    const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
+    const sessao=sessaoResp?.data?.session;
+    const payload={
+      p_clinic_name:nome,
+      p_owner_name:responsavel,
+      p_owner_email:email,
+      p_owner_password:senha,
+      p_phone:get("adminNovaClinicaWhats"),
+      p_plan_id:planId,
+      p_billing_cycle:get("adminNovaClinicaCiclo") || "monthly",
+      p_status:get("adminNovaClinicaStatus") || "trialing",
+      p_current_period_start:valorIsoFimDiaPlanoSistema(get("adminNovaClinicaInicio")) || new Date().toISOString(),
+      p_current_period_end:valorIsoFimDiaPlanoSistema(get("adminNovaClinicaPeriodoFim")),
+      p_trial_ends_at:valorIsoFimDiaPlanoSistema(get("adminNovaClinicaTesteFim")),
+      p_grace_ends_at:valorIsoFimDiaPlanoSistema(get("adminNovaClinicaToleranciaFim")),
+      p_metadata:{
+        source:"platform_admin_create_clinic",
+        created_by:sessao?.user?.email || "superadmin",
+        created_at:new Date().toISOString()
+      }
+    };
+    const resp=await consultaOnlineComTempoSistema(
+      db.rpc("platform_admin_create_clinic",payload),
+      "Criar clínica no painel geral",
+      35
+    );
+    if(resp.error) throw resp.error;
+    const senhaCampo=document.getElementById("adminNovaClinicaSenha");
+    if(senhaCampo) senhaCampo.value="";
+    if(msg) msg.innerText=`Clínica criada com sucesso. Login inicial: ${email}`;
+    await carregarAdminGeralSistema(false);
+    return true;
+  }catch(e){
+    console.warn("Criar clínica:",e);
+    const texto=textoErroOnlineSistema(e);
+    if(msg) msg.innerText="Não foi possível criar a clínica: "+texto;
+    if(String(texto).toLowerCase().includes("function") || String(texto).toLowerCase().includes("platform_admin_create_clinic")){
+      alert("Antes de criar clínicas por esta tela, execute no Supabase o arquivo SQL da etapa 8: supabase_schema_item8_cadastro_clinica.sql.");
+    }
+    return false;
+  }
 }
 async function salvarAdminGeralPlanoSistema(){
   const db=clienteSupabaseSistema();
@@ -13272,6 +13449,8 @@ window.salvarAdminPlanoClinicaSistema=salvarAdminPlanoClinicaSistema;
 window.carregarAdminGeralSistema=carregarAdminGeralSistema;
 window.limparEditorAdminGeralSistema=limparEditorAdminGeralSistema;
 window.selecionarAdminGeralClinicaSistema=selecionarAdminGeralClinicaSistema;
+window.criarAdminGeralClinicaSistema=criarAdminGeralClinicaSistema;
+window.limparNovaClinicaAdminGeralSistema=limparNovaClinicaAdminGeralSistema;
 window.salvarAdminGeralPlanoSistema=salvarAdminGeralPlanoSistema;
 window.marcarAdminGeralStatusSistema=marcarAdminGeralStatusSistema;
 async function consultaOnlineComTempoSistema(consulta,descricao,segundos=25){

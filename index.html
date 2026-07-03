@@ -12381,6 +12381,12 @@ function salvarBackupAcessoSistema(usuarios){
   const lista=mesclarUsuariosAcessoSistema(Array.isArray(usuarios)?usuarios:[]);
   localStorage.setItem(chaveLocalSistema("usuarios_acesso"),JSON.stringify(lista));
 }
+function usuarioMesmoEscopoAtualSistema(u){
+  const escopo=escopoClinicaAtualSistema();
+  if(!escopo) return true;
+  const escopoUsuario=normalizarEscopoClinicaSistema((u && (u.onlineClinicId || u.clinicId)) || "");
+  return escopoUsuario===escopo;
+}
 function mesclarUsuariosAcessoSistema(...listas){
   const mapa=new Map();
   listas.flat().forEach(u=>{
@@ -12522,7 +12528,10 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     conf.online=conf.online || {};
     conf.online.ativo=true;
     conf.online.clinicId=perfil.clinic_id;
-    const usuarios=Array.isArray(conf.usuarios) ? conf.usuarios.filter(u=>String(u.email || "").trim().toLowerCase()!==email) : [];
+    conf.__clinicScope=perfil.clinic_id;
+    const usuarios=Array.isArray(conf.usuarios)
+      ? conf.usuarios.filter(u=>String(u.email || "").trim().toLowerCase()!==email && usuarioMesmoEscopoAtualSistema(u))
+      : [];
     conf.usuarios=[usuario,...usuarios];
     salvarConfigSistemaSeguro(conf);
     return usuario;
@@ -12555,15 +12564,20 @@ window.entrarSistema = async function(){
     return;
   }
   let usuario=null;
+  const temClienteOnline=!!clienteSupabaseSistema();
   const conf=configSistemaSeguro();
-  if(existeUsuarioConfigValidoLocal(conf)){
+  if(temClienteOnline){
+    mensagemLoginProfissional("Conferindo acesso online...");
+    usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
+  }
+  if(!usuario && existeUsuarioConfigValidoLocal(conf)){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
-  if(!usuario){
+  if(!usuario && !temClienteOnline){
     mensagemLoginProfissional("Acesso local não encontrado. Tentando acesso online...");
     usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }
-  if(!usuario && !existeUsuarioConfigValidoLocal(conf) && !clienteSupabaseSistema()){
+  if(!usuario && !existeUsuarioConfigValidoLocal(conf) && !temClienteOnline){
     usuario=await criarPrimeiroAdministradorLocal(email,senha);
     mensagemLoginProfissional("Administrador criado com sucesso.");
   }
@@ -12619,6 +12633,7 @@ window.renderConfigUsuarios = function(lista){
   if(!area) return;
   area.innerHTML="";
   let base=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista)?lista:[]);
+  if(escopoClinicaAtualSistema()) base=base.filter(usuarioMesmoEscopoAtualSistema);
   if(!base.length) base=[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true}];
   const atual=usuarioAtualSistema();
   const emailAtual=String(atual && atual.email || "").trim().toLowerCase();
@@ -12654,7 +12669,8 @@ window.coletarUsuariosConfig = async function(){
       senhaHash,
       perfil,
       ativo:linha.querySelector(".config-user-ativo")?.checked !== false,
-      acessos:perfil==="Administrador" ? todosAcessosSistema() : [...new Set(["dashboard",...[...linha.querySelectorAll(".config-user-acesso:checked")].map(chk=>chk.value).filter(Boolean)])]
+      acessos:perfil==="Administrador" ? todosAcessosSistema() : [...new Set(["dashboard",...[...linha.querySelectorAll(".config-user-acesso:checked")].map(chk=>chk.value).filter(Boolean)])],
+      onlineClinicId:escopoClinicaAtualSistema() || undefined
     });
   }
   return usuarios;
@@ -12671,7 +12687,10 @@ async function salvarConfigUsuariosSeguroSistema(){
     alert(e.message || "Confira os usuários antes de salvar.");
     return;
   }
+  const escopoAtual=escopoClinicaAtualSistema();
+  usuarios=usuarios.map(u=>escopoAtual ? {...u,onlineClinicId:escopoAtual} : u);
   usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(confAtual.usuarios)?confAtual.usuarios:[], usuarios);
+  if(escopoAtual) usuarios=usuarios.filter(usuarioMesmoEscopoAtualSistema);
   const emailsSalvos=new Set(usuarios.map(u=>String(u.email || "").trim().toLowerCase()).filter(Boolean));
   const adminsExistentes=usuarios.filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
   adminsExistentes.forEach(admin=>{
@@ -12698,7 +12717,8 @@ async function salvarConfigUsuariosSeguroSistema(){
     insta:document.getElementById("confInsta")?.value || "",
     profissionais:coletarProfissionaisConfig(),
     usuarios,
-    online:coletarConfigOnlineSistema()
+    online:coletarConfigOnlineSistema(),
+    __clinicScope:escopoAtual || undefined
   };
   salvarConfigSistemaSeguro(conf);
   const msg=document.getElementById("msgConfig");
@@ -12751,7 +12771,6 @@ function salvarConfigOnlineRapidoSistema(){
 }
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
-  if(!online.ativo) return null;
   if(!online.supabaseUrl || !online.supabaseAnonKey) return null;
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;

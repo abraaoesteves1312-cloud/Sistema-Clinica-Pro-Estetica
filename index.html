@@ -3194,6 +3194,11 @@ function escopoClinicaAtualSistema(){
     const sessao=JSON.parse(sessionStorage.getItem("gepV2_usuarioLogado") || "null");
     const escopo=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
     if(escopo) return escopo;
+    if(sessao && !usuarioSuperadminSistema(sessao)){
+      const base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {};
+      const escopoConfig=normalizarEscopoClinicaSistema(base?.online?.clinicId);
+      if(escopoConfig) return escopoConfig;
+    }
   }catch(e){}
   return "";
 }
@@ -3259,6 +3264,13 @@ function usuarioAtualSistema(){
 }
 function definirUsuarioAtualSistema(usuario){
   const u=usuario || {nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()};
+  if(!u.onlineClinicId && !usuarioSuperadminSistema(u)){
+    try{
+      const base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {};
+      const escopoConfig=normalizarEscopoClinicaSistema(base?.online?.clinicId);
+      if(escopoConfig) u.onlineClinicId=escopoConfig;
+    }catch(e){}
+  }
   if(u.onlineClinicId) ativarEscopoClinicaSistema(u.onlineClinicId);
   u.perfil=perfilUsuarioSistema(u);
   if(u.perfil==="Administrador") u.acessos=todosAcessosSistema();
@@ -3311,7 +3323,22 @@ function aplicarPermissoesUsuarioAtual(){
 function atualizarPainelAdministradorGeralVisibilidadeSistema(){
   const painel=document.getElementById("painelAdministradorGeralSistema");
   if(!painel) return;
-  painel.style.display=usuarioSuperadminSistema(usuarioAtualSistema()) ? "" : "none";
+  const podeVer=usuarioSuperadminSistema(usuarioAtualSistema());
+  if(podeVer){
+    painel.style.removeProperty("display");
+    painel.removeAttribute("aria-hidden");
+    return;
+  }
+  painel.style.setProperty("display","none","important");
+  painel.setAttribute("aria-hidden","true");
+  ["adminGeralTotalClinicas","adminGeralAtivas","adminGeralAtencao","adminGeralBloqueadas"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.innerText="0";
+  });
+  const lista=document.getElementById("adminGeralListaClinicas");
+  if(lista) lista.innerHTML="";
+  const editor=document.getElementById("adminGeralEditorSistema");
+  if(editor) editor.style.display="none";
 }
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
 function criarTeste(){if(!testeClinica.value||!testeEmail.value||!testeSenha.value)return msgTeste.innerText="Preencha todos os campos.";localStorage.setItem("gepV2_teste",JSON.stringify({clinica:testeClinica.value,email:testeEmail.value,senha:testeSenha.value,fim:new Date(Date.now()+86400000).toISOString()}));msgTeste.innerText="Teste liberado.";emailLogin.value=testeEmail.value;senhaLogin.value=testeSenha.value;trocarAba("login")}
@@ -5085,7 +5112,7 @@ function montarTelaConfig(){
           <div id="adminPlanoStatusMensagemSistema" class="msg">Entre online para administrar o plano.</div>
         </div>
       </section>
-      <section id="painelAdministradorGeralSistema" class="config-card-pro">
+      <section id="painelAdministradorGeralSistema" class="config-card-pro" style="display:none">
         <h3>Painel de administrador geral</h3>
         <p>Controle central do dono do sistema para acompanhar todas as clínicas, planos, usuários e bloqueios comerciais.</p>
         <div class="config-acoes">
@@ -12361,7 +12388,13 @@ function salvarConfigSistemaSeguro(conf){
   if(chave!=="gepV2_config"){
     let base={};
     try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
-    base.online={...(base.online || {}),supabaseUrl:final.online?.supabaseUrl || base.online?.supabaseUrl || "",supabaseAnonKey:final.online?.supabaseAnonKey || base.online?.supabaseAnonKey || "",ativo:final.online?.ativo ?? base.online?.ativo ?? false};
+    base.online={
+      ...(base.online || {}),
+      supabaseUrl:final.online?.supabaseUrl || base.online?.supabaseUrl || "",
+      supabaseAnonKey:final.online?.supabaseAnonKey || base.online?.supabaseAnonKey || "",
+      clinicId:final.online?.clinicId || base.online?.clinicId || "",
+      ativo:final.online?.ativo ?? base.online?.ativo ?? false
+    };
     localStorage.setItem("gepV2_config",JSON.stringify(base));
   }
   salvarBackupAcessoSistema(final.usuarios);
@@ -14975,7 +15008,9 @@ window.renderConfig = function(){
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
   destacarCadastroFuncionariosConfig();
+  try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);
+  setTimeout(()=>{try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}},180);
   const painel=document.getElementById("painelPreparacaoOnline");
   if(painel && !document.getElementById("painelLimpezaLocal")){
     painel.insertAdjacentHTML("afterend",`<section id="painelLimpezaLocal" class="config-card-pro" style="margin-top:16px">
@@ -15432,6 +15467,7 @@ const abrirTelaBaseAutorizacoesPro = window.abrirTela || abrirTela;
 window.abrirTela = function(id,b){
   const r=abrirTelaBaseAutorizacoesPro(id,b);
   if(id==="autorizacoes") setTimeout(()=>{try{prepararPaginaAutorizacoesPro();preencherTermoAutomatico();prepararAssinaturaDigital();}catch(e){}},120);
+  if(id==="configuracoes") setTimeout(()=>{try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}},220);
   return r;
 };
 try{ abrirTela = window.abrirTela; }catch(e){}

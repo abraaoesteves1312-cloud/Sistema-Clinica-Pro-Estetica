@@ -3188,10 +3188,19 @@ const money=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"B
 function normalizarEscopoClinicaSistema(valor){
   return String(valor || "").trim().toLowerCase().replace(/[^a-z0-9-]/g,"");
 }
+const escopoAdminGeralSistema="admin-geral";
+function chaveUsaEscopoClinicaSistema(k){
+  return ["pacientes","anamnese","evolucao","autorizacoes","fotos","agenda","estoque","entradasEstoque","baixasEstoque","financeiro","cobrancas"].includes(String(k || ""));
+}
+function escopoDoRegistroSistema(item){
+  if(!item || typeof item!=="object") return "";
+  return normalizarEscopoClinicaSistema(item.clinicScope || item.clinic_id || item.clinicId || item.onlineClinicId || "");
+}
 function escopoClinicaAtualSistema(){
   if(window.__clinicScopeSistema) return window.__clinicScopeSistema;
   try{
     const sessao=JSON.parse(sessionStorage.getItem("gepV2_usuarioLogado") || "null");
+    if(sessao && usuarioSuperadminSistema(sessao)) return escopoAdminGeralSistema;
     const escopo=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
     if(escopo) return escopo;
     if(sessao && !usuarioSuperadminSistema(sessao)){
@@ -3217,9 +3226,26 @@ function chaveLocalSistema(k){
 function usuarioMesmoEscopoAtualSistema(usuario){
   const escopo=escopoClinicaAtualSistema();
   if(!escopo) return true;
+  if(escopo===escopoAdminGeralSistema) return usuarioSuperadminSistema(usuario);
   return normalizarEscopoClinicaSistema(usuario && usuario.onlineClinicId)===escopo;
 }
-const get=k=>JSON.parse(localStorage.getItem(chaveLocalSistema(k))||"[]"); const set=(k,v)=>localStorage.setItem(chaveLocalSistema(k),JSON.stringify(v));
+function filtrarRegistrosPorEscopoSistema(k,lista){
+  if(!Array.isArray(lista)) return [];
+  if(!chaveUsaEscopoClinicaSistema(k)) return lista;
+  const escopo=escopoClinicaAtualSistema();
+  return lista.filter(item=>{
+    const itemEscopo=escopoDoRegistroSistema(item);
+    if(itemEscopo) return escopo && itemEscopo===escopo;
+    return true;
+  });
+}
+function prepararRegistrosParaSalvarSistema(k,lista){
+  if(!chaveUsaEscopoClinicaSistema(k) || !Array.isArray(lista)) return lista;
+  const escopo=escopoClinicaAtualSistema();
+  if(!escopo || escopo===escopoAdminGeralSistema) return lista;
+  return lista.map(item=>item && typeof item==="object" && !Array.isArray(item) ? {...item,clinicScope:item.clinicScope || escopo} : item);
+}
+const get=k=>filtrarRegistrosPorEscopoSistema(k,JSON.parse(localStorage.getItem(chaveLocalSistema(k))||"[]")); const set=(k,v)=>localStorage.setItem(chaveLocalSistema(k),JSON.stringify(prepararRegistrosParaSalvarSistema(k,v)));
 const areasSistemaAcesso=[
   {id:"dashboard",nome:"Dashboard"},
   {id:"pacientes",nome:"Pacientes"},
@@ -3264,7 +3290,11 @@ function usuarioAtualSistema(){
 }
 function definirUsuarioAtualSistema(usuario){
   const u=usuario || {nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()};
-  if(!u.onlineClinicId && !usuarioSuperadminSistema(u)){
+  limparEscopoClinicaSistema();
+  if(usuarioSuperadminSistema(u)){
+    ativarEscopoClinicaSistema(escopoAdminGeralSistema);
+    u.onlineClinicId="";
+  }else if(!u.onlineClinicId){
     try{
       const base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {};
       const escopoConfig=normalizarEscopoClinicaSistema(base?.online?.clinicId);
@@ -3422,6 +3452,8 @@ function buscarCEP(){
 function salvarPaciente(){
   let p = get("pacientes");
   const paciente = montarPacienteDoFormulario(pacienteEditandoId);
+  const escopoPaciente=escopoClinicaAtualSistema();
+  if(escopoPaciente && escopoPaciente!==escopoAdminGeralSistema) paciente.clinicScope=escopoPaciente;
 
   if(!paciente.nome){
     alert("Informe o nome do paciente.");
@@ -12380,8 +12412,11 @@ function configSistemaSeguro(){
 function salvarConfigSistemaSeguro(conf){
   const final={...(conf || {})};
   final.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(final.usuarios)?final.usuarios:[]);
-  if(escopoClinicaAtualSistema()){
-    final.usuarios=final.usuarios.map(u=>({...u,onlineClinicId:u.onlineClinicId || escopoClinicaAtualSistema()})).filter(usuarioMesmoEscopoAtualSistema);
+  const escopoAtual=escopoClinicaAtualSistema();
+  if(escopoAtual && escopoAtual!==escopoAdminGeralSistema){
+    final.usuarios=final.usuarios.map(u=>({...u,onlineClinicId:u.onlineClinicId || escopoAtual})).filter(usuarioMesmoEscopoAtualSistema);
+  }else if(escopoAtual===escopoAdminGeralSistema){
+    final.usuarios=final.usuarios.filter(usuarioSuperadminSistema);
   }
   const chave=chaveLocalSistema("config");
   localStorage.setItem(chave,JSON.stringify(final));

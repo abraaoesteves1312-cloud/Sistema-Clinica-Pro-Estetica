@@ -3185,7 +3185,36 @@ function termoCompleto(nome){
  return `${t.titulo}\n\nDADOS DO PACIENTE\nNome: ________________________________\nCPF: _________________________________\nData de nascimento: ____/____/______\nTelefone: _____________________________\n\nSOBRE O PROCEDIMENTO\n${t.sobre}\n\nCUIDADOS PRÉ-PROCEDIMENTO\n• ${t.pre.join("\n• ")}\n\nCONTRAINDICAÇÕES\n• ${t.contra.join("\n• ")}\n\nPOSSÍVEIS REAÇÕES, RISCOS E COMPLICAÇÕES\n• ${t.riscos.join("\n• ")}\n\nCUIDADOS PÓS-PROCEDIMENTO\n• ${t.pos.join("\n• ")}\n\nDECLARAÇÃO DE CIÊNCIA\nDeclaro que fui devidamente informado(a) sobre o procedimento, benefícios, riscos, limitações, alternativas, cuidados antes e depois, e que todas as minhas dúvidas foram esclarecidas. Estou ciente de que resultados podem variar conforme organismo, hábitos, técnica, produtos utilizados e resposta individual.\n\nAUTORIZAÇÃO\nAutorizo a realização do procedimento descrito acima e comprometo-me a seguir todas as orientações fornecidas pela clínica/profissional responsável.\n\nCidade: ______________________ Data: ____/____/______\n\n________________________________________\nASSINATURA DO PACIENTE\n\n________________________________________\nASSINATURA DO PROFISSIONAL\n\nOBSERVAÇÕES DO PROFISSIONAL\n__________________________________________________\n__________________________________________________`;
 }
 const money=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const get=k=>JSON.parse(localStorage.getItem("gepV2_"+k)||"[]"); const set=(k,v)=>localStorage.setItem("gepV2_"+k,JSON.stringify(v));
+function normalizarEscopoClinicaSistema(valor){
+  return String(valor || "").trim().toLowerCase().replace(/[^a-z0-9-]/g,"");
+}
+function escopoClinicaAtualSistema(){
+  if(window.__clinicScopeSistema) return window.__clinicScopeSistema;
+  try{
+    const sessao=JSON.parse(sessionStorage.getItem("gepV2_usuarioLogado") || "null");
+    const escopo=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
+    if(escopo) return escopo;
+  }catch(e){}
+  return "";
+}
+function ativarEscopoClinicaSistema(clinicId){
+  const escopo=normalizarEscopoClinicaSistema(clinicId);
+  if(escopo) window.__clinicScopeSistema=escopo;
+  return escopo;
+}
+function limparEscopoClinicaSistema(){
+  window.__clinicScopeSistema="";
+}
+function chaveLocalSistema(k){
+  const escopo=escopoClinicaAtualSistema();
+  return escopo ? `gepV2_clinic_${escopo}_${k}` : `gepV2_${k}`;
+}
+function usuarioMesmoEscopoAtualSistema(usuario){
+  const escopo=escopoClinicaAtualSistema();
+  if(!escopo) return true;
+  return normalizarEscopoClinicaSistema(usuario && usuario.onlineClinicId)===escopo;
+}
+const get=k=>JSON.parse(localStorage.getItem(chaveLocalSistema(k))||"[]"); const set=(k,v)=>localStorage.setItem(chaveLocalSistema(k),JSON.stringify(v));
 const areasSistemaAcesso=[
   {id:"dashboard",nome:"Dashboard"},
   {id:"pacientes",nome:"Pacientes"},
@@ -3202,8 +3231,9 @@ const areasSistemaAcesso=[
 ];
 function todosAcessosSistema(){return areasSistemaAcesso.map(a=>a.id)}
 function perfilUsuarioSistema(u){
-  const perfil=String((u&&u.perfil) || (u&&u.tipo) || "Administrador");
+  const perfil=String((u&&u.perfil) || (u&&u.role) || (u&&u.tipo) || "Administrador");
   const p=perfil.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(["superadmin","master","owner"].includes(p)) return "Administrador";
   if(p.startsWith("admin")) return "Administrador";
   if(p.startsWith("recep")) return "Recepção";
   if(p.startsWith("prof")) return "Profissional";
@@ -3211,6 +3241,10 @@ function perfilUsuarioSistema(u){
   return "Funcionário";
 }
 function usuarioAdminSistema(u){return perfilUsuarioSistema(u)==="Administrador"}
+function usuarioSuperadminSistema(u){
+  const raw=String((u&&u.role) || (u&&u.perfilOriginal) || (u&&u.perfil) || (u&&u.tipo) || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  return raw==="superadmin" || raw==="master" || u?.superadmin===true || u?.isSuperadmin===true;
+}
 function acessosPerfilSistema(perfil){
   const p=perfilUsuarioSistema({perfil});
   if(p==="Administrador") return todosAcessosSistema();
@@ -3225,6 +3259,7 @@ function usuarioAtualSistema(){
 }
 function definirUsuarioAtualSistema(usuario){
   const u=usuario || {nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema()};
+  if(u.onlineClinicId) ativarEscopoClinicaSistema(u.onlineClinicId);
   u.perfil=perfilUsuarioSistema(u);
   if(u.perfil==="Administrador") u.acessos=todosAcessosSistema();
   if(!Array.isArray(u.acessos)) u.acessos=acessosPerfilSistema(u.perfil);
@@ -3271,6 +3306,12 @@ function aplicarPermissoesUsuarioAtual(){
     el.style.display=usuarioTemAcessoTela(id) ? "" : "none";
   });
   atualizarUsuarioTopoSistema();
+  atualizarPainelAdministradorGeralVisibilidadeSistema();
+}
+function atualizarPainelAdministradorGeralVisibilidadeSistema(){
+  const painel=document.getElementById("painelAdministradorGeralSistema");
+  if(!painel) return;
+  painel.style.display=usuarioSuperadminSistema(usuarioAtualSistema()) ? "" : "none";
 }
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
 function criarTeste(){if(!testeClinica.value||!testeEmail.value||!testeSenha.value)return msgTeste.innerText="Preencha todos os campos.";localStorage.setItem("gepV2_teste",JSON.stringify({clinica:testeClinica.value,email:testeEmail.value,senha:testeSenha.value,fim:new Date(Date.now()+86400000).toISOString()}));msgTeste.innerText="Teste liberado.";emailLogin.value=testeEmail.value;senhaLogin.value=testeSenha.value;trocarAba("login")}
@@ -3316,7 +3357,7 @@ function entrarRapido(){
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
   verificarPlanoComercialAoEntrarSistema();
 }
-function sairSistema(){removerBloqueioPlanoComercialSistema();sessionStorage.removeItem("gepV2_usuarioLogado");window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
+function sairSistema(){removerBloqueioPlanoComercialSistema();sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
   prontuarioAbaAtual = aba || "resumo";
@@ -4896,9 +4937,16 @@ function salvarMapaBotox(){
 function salvarFoto(){ salvarFotoArquivoPaciente(); }
 function salvarEstoque(){let a=get("estoque");a.push({id:Date.now(),nome:estNome.value,lote:estLote.value,validade:estValidade.value,un:estUn.value,qtd:+estQtd.value||0,min:+estMin.value||0,custo:+estCusto.value||0});set("estoque",a);[estNome,estLote,estValidade,estQtd,estMin,estCusto].forEach(i=>i.value="");atualizarTudo()}
 function configSistema(){
-  let conf={};
-  try{conf=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){conf={}}
+  let conf={},base={};
+  try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
+  try{conf=JSON.parse(localStorage.getItem(chaveLocalSistema("config")) || "{}") || {}}catch(e){conf={}}
+  if(chaveLocalSistema("config")!=="gepV2_config"){
+    conf.online={...(base.online || {}),...(conf.online || {})};
+  }
   conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(conf.usuarios)?conf.usuarios:[]);
+  if(escopoClinicaAtualSistema()){
+    conf.usuarios=conf.usuarios.filter(usuarioMesmoEscopoAtualSistema);
+  }
   return conf;
 }
 
@@ -5045,6 +5093,63 @@ function montarTelaConfig(){
           <button class="btn-light" type="button" onclick="limparEditorAdminGeralSistema()">Limpar seleção</button>
         </div>
         <div id="adminGeralStatusSistema" class="msg">Execute a etapa SQL 9 e entre com um usuário superadmin para carregar este painel.</div>
+        <div id="adminGeralCadastroClinicaSistema" class="admin-geral-editor">
+          <h4>Cadastrar nova clínica</h4>
+          <p>Crie uma clínica nova com acesso inicial, plano comercial e datas de assinatura.</p>
+          <div class="plano-admin-grid">
+            <label>Nome da clínica
+              <input id="novaClinicaNomeSistema" placeholder="Ex.: Clínica Modelo">
+            </label>
+            <label>Responsável
+              <input id="novaClinicaResponsavelSistema" placeholder="Nome do administrador">
+            </label>
+            <label>E-mail de acesso
+              <input id="novaClinicaEmailSistema" placeholder="email@clinica.com">
+            </label>
+            <label>WhatsApp
+              <input id="novaClinicaWhatsSistema" placeholder="(00) 00000-0000">
+            </label>
+            <label>Senha inicial
+              <input id="novaClinicaSenhaSistema" type="password" placeholder="Mínimo 6 caracteres">
+            </label>
+            <label>Plano
+              <select id="novaClinicaPlanoSistema">
+                <option value="">Carregue os planos...</option>
+              </select>
+            </label>
+            <label>Cobrança
+              <select id="novaClinicaCicloSistema">
+                <option value="monthly">Mensal</option>
+                <option value="yearly">Anual</option>
+              </select>
+            </label>
+            <label>Situação
+              <select id="novaClinicaStatusSistema">
+                <option value="trialing">Teste</option>
+                <option value="active">Ativo</option>
+                <option value="past_due">Pagamento pendente</option>
+                <option value="suspended">Suspenso</option>
+              </select>
+            </label>
+            <label>Início
+              <input id="novaClinicaInicioSistema" type="date">
+            </label>
+            <label>Fim do período
+              <input id="novaClinicaFimPeriodoSistema" type="date">
+            </label>
+            <label>Fim do teste
+              <input id="novaClinicaFimTesteSistema" type="date">
+            </label>
+            <label>Fim da tolerância
+              <input id="novaClinicaFimToleranciaSistema" type="date">
+            </label>
+          </div>
+          <button class="btn-main" type="button" onclick="criarAdminGeralClinicaSistema()">Criar clínica</button>
+          <div class="config-acoes">
+            <button class="btn-light" type="button" onclick="limparAdminGeralCadastroClinicaSistema()">Limpar cadastro</button>
+          </div>
+          <div id="adminGeralCadastroStatusSistema" class="msg">Preencha os dados da nova clínica e clique em criar.</div>
+        </div>
         <div class="admin-geral-grid">
           <div class="admin-geral-stat"><span>Total de clínicas</span><b id="adminGeralTotalClinicas">0</b></div>
           <div class="admin-geral-stat"><span>Ativas</span><b id="adminGeralAtivas">0</b></div>
@@ -5123,6 +5228,8 @@ function montarTelaConfig(){
 
 function renderConfig(){
   montarTelaConfig();
+  atualizarPainelAdministradorGeralVisibilidadeSistema();
+  prepararCadastroClinicaAdminGeralSistema();
   const conf = configSistema();
   const clinica = document.getElementById("confClinica");
   const resp = document.getElementById("confResp");
@@ -5272,10 +5379,25 @@ async function salvarConfig(){
 }
 
 function chavesBackupSistema(){
-  return Object.keys(localStorage).filter(k=>k.startsWith("gepV2_")).sort();
+  const escopo=escopoClinicaAtualSistema();
+  if(escopo){
+    const prefixo=`gepV2_clinic_${escopo}_`;
+    return Object.keys(localStorage).filter(k=>k.startsWith(prefixo)).sort();
+  }
+  return Object.keys(localStorage).filter(k=>k.startsWith("gepV2_") && !k.startsWith("gepV2_clinic_")).sort();
+}
+
+function chaveBaseBackupSistema(chave){
+  const escopo=escopoClinicaAtualSistema();
+  if(escopo){
+    const prefixo=`gepV2_clinic_${escopo}_`;
+    if(String(chave || "").startsWith(prefixo)) return "gepV2_"+String(chave).slice(prefixo.length);
+  }
+  return chave;
 }
 
 function nomeAmigavelBackupSistema(chave){
+  chave=chaveBaseBackupSistema(chave);
   const mapa={
     gepV2_pacientes:"Pacientes",
     gepV2_agenda:"Agenda",
@@ -5323,7 +5445,7 @@ function renderResumoBackupSistema(){
   const area=document.getElementById("backupResumoSistema");
   if(!area) return;
   const resumo=resumoBackupSistema();
-  const principais=["gepV2_pacientes","gepV2_agenda","gepV2_fotos","gepV2_financeiro"];
+  const principais=["pacientes","agenda","fotos","financeiro"].map(chaveLocalSistema);
   const cards=principais.map(chave=>{
     const item=resumo.itens.find(x=>x.chave===chave) || {nome:nomeAmigavelBackupSistema(chave),quantidade:0};
     return `<div class="backup-resumo-item"><b>${Number(item.quantidade || 0)}</b><span>${escapeHtmlText(item.nome)}</span></div>`;
@@ -5403,7 +5525,15 @@ function importarBackupSistema(input){
         return;
       }
       exportarBackupSistema("antes_da_importacao");
-      chaves.forEach(k=>localStorage.setItem(k,String(payload.dados[k] ?? "")));
+      const escopo=escopoClinicaAtualSistema();
+      chaves.forEach(k=>{
+        let destino=k;
+        if(escopo){
+          const base=chaveBaseBackupSistema(k).replace(/^gepV2_/,"");
+          destino=chaveLocalSistema(base);
+        }
+        localStorage.setItem(destino,String(payload.dados[k] ?? ""));
+      });
       const status = document.getElementById("backupStatusSistema");
       if(status) status.innerText = `Backup importado com ${chaves.length} area(s) de dados. Uma copia de seguranca anterior foi baixada antes da importacao.`;
       try{atualizarTudo();renderConfig();}catch(e){}
@@ -12223,15 +12353,25 @@ function configSistemaSeguro(){
 function salvarConfigSistemaSeguro(conf){
   const final={...(conf || {})};
   final.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(final.usuarios)?final.usuarios:[]);
-  localStorage.setItem("gepV2_config",JSON.stringify(final));
+  if(escopoClinicaAtualSistema()){
+    final.usuarios=final.usuarios.map(u=>({...u,onlineClinicId:u.onlineClinicId || escopoClinicaAtualSistema()})).filter(usuarioMesmoEscopoAtualSistema);
+  }
+  const chave=chaveLocalSistema("config");
+  localStorage.setItem(chave,JSON.stringify(final));
+  if(chave!=="gepV2_config"){
+    let base={};
+    try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
+    base.online={...(base.online || {}),supabaseUrl:final.online?.supabaseUrl || base.online?.supabaseUrl || "",supabaseAnonKey:final.online?.supabaseAnonKey || base.online?.supabaseAnonKey || "",ativo:final.online?.ativo ?? base.online?.ativo ?? false};
+    localStorage.setItem("gepV2_config",JSON.stringify(base));
+  }
   salvarBackupAcessoSistema(final.usuarios);
 }
 function usuariosBackupAcessoSistema(){
-  try{return JSON.parse(localStorage.getItem("gepV2_usuarios_acesso") || "[]") || []}catch(e){return []}
+  try{return JSON.parse(localStorage.getItem(chaveLocalSistema("usuarios_acesso")) || "[]") || []}catch(e){return []}
 }
 function salvarBackupAcessoSistema(usuarios){
   const lista=mesclarUsuariosAcessoSistema(Array.isArray(usuarios)?usuarios:[]);
-  localStorage.setItem("gepV2_usuarios_acesso",JSON.stringify(lista));
+  localStorage.setItem(chaveLocalSistema("usuarios_acesso"),JSON.stringify(lista));
 }
 function mesclarUsuariosAcessoSistema(...listas){
   const mapa=new Map();
@@ -12297,6 +12437,48 @@ async function autenticarUsuarioConfigLocal(email,senha){
   }
   return null;
 }
+async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
+  const db=clienteSupabaseSistema();
+  if(!db) return null;
+  const login=await db.auth.signInWithPassword({email,password:senha});
+  if(login.error) return null;
+  const sessaoResp=await db.auth.getSession();
+  const sessao=sessaoResp?.data?.session;
+  if(!sessao?.user?.id) return null;
+  const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
+  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
+  const perfil=perfilResp.data;
+  if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
+  let nomeClinica="Clínica online";
+  if(perfil.clinic_id){
+    const clinicaResp=await db.from("clinics").select("name").eq("id",perfil.clinic_id).maybeSingle();
+    if(!clinicaResp.error && clinicaResp.data?.name) nomeClinica=clinicaResp.data.name;
+  }
+  const superadmin=usuarioSuperadminSistema({role:perfil.role,perfil:perfil.role});
+  const perfilNormalizado=perfilUsuarioSistema({perfil:perfil.role || "Administrador"});
+  const conf=configSistemaSeguro();
+  conf.clinica=nomeClinica;
+  conf.online=conf.online || {};
+  conf.online.ativo=true;
+  conf.online.clinicId=perfil.clinic_id || conf.online.clinicId || "";
+  const usuario={
+    nome:perfil.full_name || sessao.user.user_metadata?.full_name || email,
+    email,
+    role:perfil.role || perfilNormalizado,
+    perfilOriginal:perfil.role || perfilNormalizado,
+    perfil:perfilNormalizado,
+    superadmin,
+    isSuperadmin:superadmin,
+    onlineClinicId:perfil.clinic_id || "",
+    acessos:acessosPerfilSistema(perfilNormalizado),
+    ativo:true,
+    senhaHash:await senhaHashSistemaProfissional(email,senha)
+  };
+  const existentes=Array.isArray(conf.usuarios)?conf.usuarios.filter(u=>String(u.email||"").trim().toLowerCase()!==email):[];
+  conf.usuarios=[usuario,...existentes.filter(usuarioMesmoEscopoAtualSistema)];
+  salvarConfigSistemaSeguro(conf);
+  return usuario;
+}
 async function criarPrimeiroAdministradorLocal(email,senha){
   const conf=configSistemaSeguro();
   const emailAdmin=String(email || "").trim().toLowerCase();
@@ -12343,10 +12525,15 @@ window.entrarSistema = async function(){
   }
   let usuario=null;
   const conf=configSistemaSeguro();
-  if(!existeUsuarioConfigValidoLocal(conf)){
+  try{
+    usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
+  }catch(e){
+    console.warn("Login online falhou, tentando acesso local:",e);
+  }
+  if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
     usuario=await criarPrimeiroAdministradorLocal(email,senha);
     mensagemLoginProfissional("Administrador criado com sucesso.");
-  }else{
+  }else if(!usuario){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
   if(!usuario){
@@ -12400,6 +12587,7 @@ window.renderConfigUsuarios = function(lista){
   if(!area) return;
   area.innerHTML="";
   let base=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista)?lista:[]);
+  if(escopoClinicaAtualSistema()) base=base.filter(usuarioMesmoEscopoAtualSistema);
   if(!base.length) base=[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true}];
   const atual=usuarioAtualSistema();
   const emailAtual=String(atual && atual.email || "").trim().toLowerCase();
@@ -12434,6 +12622,7 @@ window.coletarUsuariosConfig = async function(){
       email,
       senhaHash,
       perfil,
+      onlineClinicId:escopoClinicaAtualSistema() || undefined,
       ativo:linha.querySelector(".config-user-ativo")?.checked !== false,
       acessos:perfil==="Administrador" ? todosAcessosSistema() : [...new Set(["dashboard",...[...linha.querySelectorAll(".config-user-acesso:checked")].map(chk=>chk.value).filter(Boolean)])]
     });
@@ -12532,7 +12721,6 @@ function salvarConfigOnlineRapidoSistema(){
 }
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
-  if(!online.ativo) return null;
   if(!online.supabaseUrl || !online.supabaseAnonKey) return null;
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
@@ -13075,16 +13263,85 @@ async function garantirPlanosComerciaisSistema(db){
 }
 function preencherSelectPlanosAdminGeralSistema(selecionadoId=""){
   const select=document.getElementById("adminGeralPlanoSelect");
-  if(!select) return;
   const lista=(planosComerciaisCacheSistema || []).filter(p=>p && p.id);
-  if(!lista.length){
-    select.innerHTML='<option value="">Nenhum plano encontrado</option>';
-    return;
+  const html=!lista.length ? '<option value="">Nenhum plano encontrado</option>' : lista.map(p=>{
+      const selecionado=String(p.id)===String(selecionadoId) ? " selected" : "";
+      return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${escapeHtmlText(p.name || p.code || "Plano")}</option>`;
+    }).join("");
+  if(select) select.innerHTML=html;
+  const novo=document.getElementById("novaClinicaPlanoSistema");
+  if(novo) novo.innerHTML=html;
+}
+function dataInputOffsetAdminGeralSistema(dias){
+  const data=new Date();
+  data.setDate(data.getDate()+dias);
+  return data.toISOString().slice(0,10);
+}
+function prepararCadastroClinicaAdminGeralSistema(){
+  const set=(id,valor)=>{const el=document.getElementById(id); if(el && !el.value) el.value=valor;};
+  set("novaClinicaInicioSistema",dataInputOffsetAdminGeralSistema(0));
+  set("novaClinicaFimPeriodoSistema",dataInputOffsetAdminGeralSistema(30));
+  set("novaClinicaFimTesteSistema",dataInputOffsetAdminGeralSistema(7));
+  set("novaClinicaFimToleranciaSistema",dataInputOffsetAdminGeralSistema(35));
+}
+function limparAdminGeralCadastroClinicaSistema(){
+  ["novaClinicaNomeSistema","novaClinicaResponsavelSistema","novaClinicaEmailSistema","novaClinicaWhatsSistema","novaClinicaSenhaSistema"].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value="";
+  });
+  prepararCadastroClinicaAdminGeralSistema();
+  const msg=document.getElementById("adminGeralCadastroStatusSistema");
+  if(msg) msg.innerText="Preencha os dados da nova clínica e clique em criar.";
+}
+async function criarAdminGeralClinicaSistema(){
+  const db=clienteSupabaseSistema();
+  const msg=document.getElementById("adminGeralCadastroStatusSistema");
+  if(!usuarioSuperadminSistema(usuarioAtualSistema())){
+    if(msg) msg.innerText="Somente o administrador geral pode criar clínicas.";
+    return false;
   }
-  select.innerHTML=lista.map(p=>{
-    const selecionado=String(p.id)===String(selecionadoId) ? " selected" : "";
-    return `<option value="${escapeHtmlAttr(p.id)}"${selecionado}>${escapeHtmlText(p.name || p.code || "Plano")}</option>`;
-  }).join("");
+  if(!db){
+    if(msg) msg.innerText="Conecte o Supabase antes de criar clínica.";
+    return false;
+  }
+  try{
+    await garantirPlanosComerciaisSistema(db);
+    preencherSelectPlanosAdminGeralSistema();
+    const nome=(document.getElementById("novaClinicaNomeSistema")?.value || "").trim();
+    const responsavel=(document.getElementById("novaClinicaResponsavelSistema")?.value || "").trim();
+    const email=(document.getElementById("novaClinicaEmailSistema")?.value || "").trim().toLowerCase().replace(/^[^a-z0-9]+/i,"");
+    const senha=document.getElementById("novaClinicaSenhaSistema")?.value || "";
+    if(!nome) throw new Error("Informe o nome da clínica.");
+    if(!responsavel) throw new Error("Informe o responsável.");
+    if(!email || !email.includes("@")) throw new Error("Informe um e-mail válido.");
+    if(senha.length<6) throw new Error("Informe uma senha inicial com pelo menos 6 caracteres.");
+    if(msg) msg.innerText="Criando clínica no Supabase...";
+    const payload={
+      p_clinic_name:nome,
+      p_owner_name:responsavel,
+      p_owner_email:email,
+      p_owner_password:senha,
+      p_phone:(document.getElementById("novaClinicaWhatsSistema")?.value || "").trim(),
+      p_plan_id:document.getElementById("novaClinicaPlanoSistema")?.value || null,
+      p_billing_cycle:document.getElementById("novaClinicaCicloSistema")?.value || "monthly",
+      p_status:document.getElementById("novaClinicaStatusSistema")?.value || "trialing",
+      p_current_period_start:valorIsoFimDiaPlanoSistema(document.getElementById("novaClinicaInicioSistema")?.value) || new Date().toISOString(),
+      p_current_period_end:valorIsoFimDiaPlanoSistema(document.getElementById("novaClinicaFimPeriodoSistema")?.value),
+      p_trial_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("novaClinicaFimTesteSistema")?.value),
+      p_grace_ends_at:valorIsoFimDiaPlanoSistema(document.getElementById("novaClinicaFimToleranciaSistema")?.value),
+      p_metadata:{source:"admin_general_create_clinic",created_at:new Date().toISOString()}
+    };
+    const resp=await consultaOnlineComTempoSistema(db.rpc("platform_admin_create_clinic",payload),"Criar nova clínica",30);
+    if(resp.error) throw resp.error;
+    if(msg) msg.innerText=`Clínica criada com sucesso. Login inicial: ${email}`;
+    const senhaCampo=document.getElementById("novaClinicaSenhaSistema");
+    if(senhaCampo) senhaCampo.value="";
+    await carregarAdminGeralSistema(false);
+    return true;
+  }catch(e){
+    console.warn("Criar clínica:",e);
+    if(msg) msg.innerText="Não foi possível criar a clínica: "+textoErroOnlineSistema(e);
+    return false;
+  }
 }
 function assinaturaAdminGeralComoPlanoSistema(item={}){
   return {
@@ -13135,6 +13392,10 @@ function renderAdminGeralClinicasSistema(lista=[]){
 async function carregarAdminGeralSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralStatusSistema");
+  if(!usuarioSuperadminSistema(usuarioAtualSistema())){
+    if(msg) msg.innerText="Painel geral disponível apenas para o administrador geral do sistema.";
+    return false;
+  }
   if(!db){
     if(msg) msg.innerText="Conecte o Supabase antes de abrir o painel geral.";
     return false;
@@ -13239,6 +13500,8 @@ window.carregarPlanoClinicaOnlineSistema=carregarPlanoClinicaOnlineSistema;
 window.carregarAdminPlanoClinicaSistema=carregarAdminPlanoClinicaSistema;
 window.salvarAdminPlanoClinicaSistema=salvarAdminPlanoClinicaSistema;
 window.carregarAdminGeralSistema=carregarAdminGeralSistema;
+window.criarAdminGeralClinicaSistema=criarAdminGeralClinicaSistema;
+window.limparAdminGeralCadastroClinicaSistema=limparAdminGeralCadastroClinicaSistema;
 window.limparEditorAdminGeralSistema=limparEditorAdminGeralSistema;
 window.selecionarAdminGeralClinicaSistema=selecionarAdminGeralClinicaSistema;
 window.salvarAdminGeralPlanoSistema=salvarAdminGeralPlanoSistema;
@@ -14612,6 +14875,7 @@ window.renderConfig = function(){
   renderConfigBaseProfissional();
   inserirPainelPreparacaoOnlineConfig();
   try{preencherConfigOnlineSistema();}catch(e){}
+  try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
 function pacienteCentralConfirmado(){

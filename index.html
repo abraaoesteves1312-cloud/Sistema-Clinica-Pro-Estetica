@@ -5010,7 +5010,9 @@ function configSistema(){
   if(chaveLocalSistema("config")!=="gepV2_config"){
     conf.online={...(base.online || {}),...(conf.online || {})};
   }
-  conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(conf.usuarios)?conf.usuarios:[]);
+  if(!Array.isArray(conf.usuarios) || !conf.usuarios.some(u=>u && String(u.email || "").trim() && (u.senhaHash || u.senha))){
+    conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
+  }
   if(escopoClinicaAtualSistema()){
     conf.usuarios=conf.usuarios.filter(usuarioMesmoEscopoAtualSistema);
   }
@@ -5400,7 +5402,8 @@ function renderConfigUsuarios(lista){
   const area = document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML = "";
-  let base = mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista) ? lista : []);
+  let base = mesclarUsuariosAcessoSistema(Array.isArray(lista) ? lista : []);
+  if(!base.length) base = mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
   if(!base.length) base=[{nome:"Administrador", email:"", senha:"", perfil:"Administrador", acessos:todosAcessosSistema(), ativo:true}];
   base.forEach(u=>adicionarUsuarioConfig(u.nome || "", u.email || "", "", u.perfil || "Administrador", u.acessos || null, u.senhaHash || "", u.senha || "", u.ativo!==false));
 }
@@ -12419,7 +12422,7 @@ function configSistemaSeguro(){
 }
 function salvarConfigSistemaSeguro(conf){
   const final={...(conf || {})};
-  final.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(),Array.isArray(final.usuarios)?final.usuarios:[]);
+  final.usuarios=mesclarUsuariosAcessoSistema(Array.isArray(final.usuarios)?final.usuarios:[]);
   const escopoAtual=escopoClinicaAtualSistema();
   if(escopoAtual && escopoAtual!==escopoAdminGeralSistema){
     final.usuarios=final.usuarios.map(u=>({...u,onlineClinicId:u.onlineClinicId || escopoAtual})).filter(usuarioMesmoEscopoAtualSistema);
@@ -12626,6 +12629,7 @@ window.entrarSistema = async function(){
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
   atualizarTudo();
+  try{garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -12662,7 +12666,8 @@ window.renderConfigUsuarios = function(lista){
   const area=document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML="";
-  let base=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(lista)?lista:[]);
+  let base=mesclarUsuariosAcessoSistema(Array.isArray(lista)?lista:[]);
+  if(!base.length) base=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
   if(escopoClinicaAtualSistema()) base=base.filter(usuarioMesmoEscopoAtualSistema);
   if(!base.length) base=[{nome:"Administrador",email:"",perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true}];
   const atual=usuarioAtualSistema();
@@ -12717,7 +12722,7 @@ async function salvarConfigUsuariosSeguroSistema(){
     alert(e.message || "Confira os usuários antes de salvar.");
     return;
   }
-  usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema(), Array.isArray(confAtual.usuarios)?confAtual.usuarios:[], usuarios);
+  usuarios=mesclarUsuariosAcessoSistema(usuarios);
   const emailsSalvos=new Set(usuarios.map(u=>String(u.email || "").trim().toLowerCase()).filter(Boolean));
   const adminsExistentes=usuarios.filter(u=>perfilUsuarioSistema(u)==="Administrador" && String(u.email || "").trim() && (u.senhaHash || u.senha));
   adminsExistentes.forEach(admin=>{
@@ -12760,9 +12765,21 @@ const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtgduftzxaw.supabase.co";
 const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtgduftzxaw";
 const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="jyjqhuwmcmtgduftzxaw";
 
+function emailOnlineNormalizadoSistema(valor){
+  return String(valor || "").trim().toLowerCase();
+}
+function ajustarOnlineAoUsuarioAtualSistema(online){
+  const ajustado={...(online || {})};
+  const usuario=usuarioAtualSistema && usuarioAtualSistema();
+  if(usuario && !usuarioSuperadminSistema(usuario)){
+    const cid=String(usuario.onlineClinicId || "").trim();
+    if(cid) ajustado.clinicId=cid;
+  }
+  return ajustado;
+}
 function configOnlineSistema(){
   const conf=configSistemaSeguro();
-  const online={...(conf.online || {})};
+  const online=ajustarOnlineAoUsuarioAtualSistema({...(conf.online || {})});
   const urlCorrigida=limparUrlSupabaseSistema(online.supabaseUrl || "");
   if(online.supabaseUrl && urlCorrigida!==online.supabaseUrl){
     online.supabaseUrl=urlCorrigida;
@@ -12814,6 +12831,14 @@ function salvarConfigOnlineRapidoSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   if(msg) msg.innerText=conf.online.ativo ? `Conexão online salva com URL corrigida: ${conf.online.supabaseUrl || "vazia"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.";
 }
+function limparClinicaOnlineLocalSistema(){
+  const conf=configSistemaSeguro();
+  conf.online=conf.online || {};
+  conf.online.clinicId="";
+  salvarConfigSistemaSeguro(conf);
+  const campoClinic=document.getElementById("onlineClinicId");
+  if(campoClinic) campoClinic.value="";
+}
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
   if(!online.supabaseUrl || !online.supabaseAnonKey) return null;
@@ -12822,6 +12847,25 @@ function clienteSupabaseSistema(){
   window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
   window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey);
   return window.__clienteSupabaseSistema;
+}
+async function garantirSessaoOnlineDoUsuarioAtualSistema(){
+  const usuario=usuarioAtualSistema && usuarioAtualSistema();
+  const emailLocal=emailOnlineNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
+  if(!emailLocal) return;
+  const db=clienteSupabaseSistema();
+  if(!db || !db.auth) return;
+  try{
+    const sessaoResp=await db.auth.getSession();
+    const emailOnline=emailOnlineNormalizadoSistema(sessaoResp?.data?.session?.user?.email || "");
+    if(emailOnline && emailOnline!==emailLocal){
+      await db.auth.signOut();
+      limparClinicaOnlineLocalSistema();
+      const msg=document.getElementById("onlineStatusSistema");
+      if(msg) msg.innerText="Sessão online anterior desconectada. Entre online com o usuário atual para carregar a clínica correta.";
+    }
+  }catch(e){
+    console.warn("Conferência da sessão online:",e);
+  }
 }
 async function sistemaOnlinePodeSincronizarSilencioso(){
   const online=configOnlineSistema();
@@ -13114,12 +13158,14 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     if(perfilResp.error) throw perfilResp.error;
     const perfil=perfilResp.data;
     if(!perfil?.clinic_id){
+      limparClinicaOnlineLocalSistema();
       atualizarPainelPlanoComercialSistema({mensagem:"Este usuário ainda não está vinculado a uma clínica online."});
       return false;
     }
     const conf=configSistemaSeguro();
     conf.online=conf.online || {};
     conf.online.clinicId=perfil.clinic_id;
+    ativarEscopoClinicaSistema(perfil.clinic_id);
     salvarConfigSistemaSeguro(conf);
     const campoClinic=document.getElementById("onlineClinicId");
     if(campoClinic) campoClinic.value=perfil.clinic_id;

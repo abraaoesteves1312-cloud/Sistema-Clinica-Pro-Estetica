@@ -12756,13 +12756,31 @@ async function salvarConfigUsuariosSeguroSistema(){
   renderConfig();
 }
 window.salvarConfig = salvarConfigUsuariosSeguroSistema;
+const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtgduftzxaw.supabase.co";
+const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtgduftzxaw";
+const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="jyjqhuwmcmtgduftzxaw";
+
 function configOnlineSistema(){
   const conf=configSistemaSeguro();
-  return conf.online || {};
+  const online={...(conf.online || {})};
+  const urlCorrigida=limparUrlSupabaseSistema(online.supabaseUrl || "");
+  if(online.supabaseUrl && urlCorrigida!==online.supabaseUrl){
+    online.supabaseUrl=urlCorrigida;
+    conf.online=online;
+    salvarConfigSistemaSeguro(conf);
+  }
+  return online;
 }
 function limparUrlSupabaseSistema(valor){
   let url=String(valor || "").trim().replace(/\s+/g,"");
+  if(!url) return "";
+  if(url.includes(SUPABASE_PROJECT_REF_CORRETO_SISTEMA) || url.includes(SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA)){
+    return SUPABASE_URL_CORRETA_SISTEMA;
+  }
+  url=url.replace(/\/rest\/v1\/?$/i,"");
+  if(url.startsWith("://")) url="https"+url;
   if(url && !/^https?:\/\//i.test(url)) url="https://"+url;
+  url=url.replace(SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA+".supabase.co",SUPABASE_PROJECT_REF_CORRETO_SISTEMA+".supabase.co");
   return url.replace(/\/+$/,"");
 }
 function limparChaveSupabaseSistema(valor){
@@ -12792,8 +12810,9 @@ function salvarConfigOnlineRapidoSistema(){
   const conf=configSistemaSeguro();
   conf.online=coletarConfigOnlineSistema();
   salvarConfigSistemaSeguro(conf);
+  preencherConfigOnlineSistema();
   const msg=document.getElementById("onlineStatusSistema");
-  if(msg) msg.innerText=conf.online.ativo ? "Conexão online salva. Agora teste a conexão." : "Configuração online salva, mas o modo online está desligado.";
+  if(msg) msg.innerText=conf.online.ativo ? `Conexão online salva com URL corrigida: ${conf.online.supabaseUrl || "vazia"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.";
 }
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
@@ -13624,7 +13643,7 @@ function textoErroOnlineSistema(e){
   if(e && e.status) partes.push("Status: "+e.status);
   const msg=partes.filter(Boolean).join(" | ") || String(e || "erro desconhecido");
   if(/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)){
-    return "Falha de rede: o navegador não conseguiu conversar com o Supabase.";
+    return `Falha de rede: o navegador não conseguiu conversar com o Supabase. Confira se o campo URL está exatamente assim: ${SUPABASE_URL_CORRETA_SISTEMA}. Se estiver no celular, feche e abra o app depois de atualizar.`;
   }
   if(/Bad Request/i.test(msg)){
     return "Bad Request: o servidor recusou os dados enviados. Confira se a etapa SQL 8B foi executada e se plano, cobrança, situação e datas estão válidos. Detalhe: "+msg;

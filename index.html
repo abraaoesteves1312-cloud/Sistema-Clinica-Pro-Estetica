@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="sistema-clinica-versao" content="agenda-horarios-procedimentos-2026-06-21">
+<meta name="sistema-clinica-versao" content="app-instalavel-2026-07-03">
+<meta name="theme-color" content="#b8893b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gestão Estética Pro">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="application-name" content="Gestão Estética Pro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Gestão Estética Pro</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -15723,6 +15731,64 @@ window.renderProntuario = renderProntuarioProfissional;
 window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
+
+const versaoAppInstalavelSistema = "2026-07-03-item7-app-instalavel";
+window.GEP_APP_VERSION = versaoAppInstalavelSistema;
+let promptInstalacaoAppSistema = null;
+
+function sistemaEstaInstaladoComoApp(){
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+function garantirBotaoInstalarAppSistema(){
+  if(document.getElementById("btnInstalarAppSistema")) return;
+  const btn=document.createElement("button");
+  btn.id="btnInstalarAppSistema";
+  btn.type="button";
+  btn.textContent="Instalar aplicativo";
+  btn.setAttribute("aria-label","Instalar aplicativo");
+  btn.style.cssText="position:fixed;right:18px;bottom:18px;z-index:99999;padding:13px 18px;border-radius:999px;background:linear-gradient(135deg,#d9a15f,#b8893b);color:#fff;box-shadow:0 14px 30px rgba(80,45,28,.22);font-weight:800;display:none";
+  btn.onclick=instalarAppSistema;
+  document.body.appendChild(btn);
+}
+
+function atualizarBotaoInstalarAppSistema(){
+  garantirBotaoInstalarAppSistema();
+  const btn=document.getElementById("btnInstalarAppSistema");
+  if(!btn) return;
+  btn.style.display = sistemaEstaInstaladoComoApp() ? "none" : "block";
+}
+
+async function instalarAppSistema(){
+  if(promptInstalacaoAppSistema){
+    promptInstalacaoAppSistema.prompt();
+    try{ await promptInstalacaoAppSistema.userChoice; }catch(e){}
+    promptInstalacaoAppSistema=null;
+    atualizarBotaoInstalarAppSistema();
+    return;
+  }
+  alert("Para instalar: no celular, toque no menu do navegador e escolha 'Adicionar à tela inicial'. Se ja existir um icone antigo, remova e instale de novo para pegar a versao atualizada.");
+}
+
+window.addEventListener("beforeinstallprompt",function(event){
+  event.preventDefault();
+  promptInstalacaoAppSistema=event;
+  atualizarBotaoInstalarAppSistema();
+});
+
+window.addEventListener("appinstalled",function(){
+  promptInstalacaoAppSistema=null;
+  atualizarBotaoInstalarAppSistema();
+});
+
+document.addEventListener("DOMContentLoaded",function(){
+  atualizarBotaoInstalarAppSistema();
+  if("serviceWorker" in navigator && location.protocol !== "file:"){
+    navigator.serviceWorker.register("./service-worker.js?v="+encodeURIComponent(versaoAppInstalavelSistema))
+      .then(function(reg){ if(reg && reg.update) reg.update(); })
+      .catch(function(e){ console.warn("Service worker nao registrado:",e); });
+  }
+});
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v2";
+const CACHE_NAME = "gestao-estetica-pro-app-v3-20260703";
 const CORE_ASSETS = [
   "./",
   "./index.html",

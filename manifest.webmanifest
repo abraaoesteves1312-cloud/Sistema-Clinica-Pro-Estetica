@@ -1,8 +1,9 @@
 {
-  "name": "Gestao Estetica Pro",
-  "short_name": "Estetica Pro",
+  "id": "./",
+  "name": "Gestão Estética Pro",
+  "short_name": "Gestão Pro",
   "description": "Sistema de gestao para clinicas de estetica.",
-  "start_url": "./",
+  "start_url": "./?app=instalado",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",

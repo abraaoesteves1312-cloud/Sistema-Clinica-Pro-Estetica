@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v5-20260704-online-user-scope";
+const CACHE_NAME = "gestao-estetica-pro-app-v6-20260705-online-scoped-user";
 const CORE_ASSETS = [
   "./",
   "./index.html",

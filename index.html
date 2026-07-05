@@ -9745,6 +9745,10 @@ function resumoFinanceiroSistema(){
       resumo.liquido += Number(p.liquido || 0);
     }
   });
+  const cobrancasResumo = resumoCobrancasFinanceiroSistema(get("cobrancasProntuario"));
+  resumo.cobradoPacientes = cobrancasResumo.total;
+  resumo.pagoPacientes = cobrancasResumo.pago;
+  resumo.aberto += cobrancasResumo.aberto;
   resumo.saldo = resumo.entradas - resumo.saidas - resumo.taxas;
   return resumo;
 }
@@ -9835,8 +9839,9 @@ function gerarRelatorio(){
   const fin = resumoFinanceiroSistema();
   const pacientes = get("pacientes");
   const cobrancas = get("cobrancasProntuario");
-  const totalCobrado = cobrancas.reduce((s,x)=>s + Number(x.valorTotal || x.valor || 0),0);
-  const totalPago = cobrancas.reduce((s,x)=>s + Number(x.valorPago || x.pago || 0),0);
+  const resumoCobrancas = resumoCobrancasFinanceiroSistema(cobrancas);
+  const totalCobrado = resumoCobrancas.total;
+  const totalPago = resumoCobrancas.pago;
   const alvo = document.getElementById("relatorio");
   if(!alvo) return;
   alvo.innerHTML=`
@@ -9882,8 +9887,9 @@ function gerarRelatorioPacienteSelecionado(){
   const agenda = get("agenda").filter(x=>x.paciente===nome).slice().reverse();
   const mapasBotox = get("mapasBotox").filter(x=>x.paciente===nome).slice().reverse();
   const financeiro = get("financeiroPro").filter(x=>x.paciente===nome || x.pagador===nome).slice().reverse();
-  const totalCobrado = cobrancas.reduce((s,x)=>s + Number(x.valorTotal || x.valor || 0),0);
-  const totalPago = cobrancas.reduce((s,x)=>s + Number(x.valorPago || x.pago || 0),0);
+  const resumoCobrancas = resumoCobrancasFinanceiroSistema(cobrancas);
+  const totalCobrado = resumoCobrancas.total;
+  const totalPago = resumoCobrancas.pago;
   alvo.innerHTML = `
     <div class="relatorio-bloco">
       <h3>Histórico completo do paciente</h3>
@@ -10011,6 +10017,46 @@ function statusCobrancaFinanceiroSistema(statusInformado, total, pago){
   if(valorPago <= 0) return "Em aberto";
   if(valorTotal > 0 && valorPago < valorTotal) return "Parcial";
   return statusInformado === "Em aberto" ? "Pago" : (statusInformado || "Pago");
+}
+function textoStatusFinanceiroSistema(status){
+  return String(status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+}
+function statusFinanceiroAbertoSistema(item){
+  const status = textoStatusFinanceiroSistema(item?.status);
+  return ["em aberto","aberto","pendente","vencido","nao pago"].includes(status);
+}
+function statusFinanceiroCanceladoSistema(item){
+  const status = textoStatusFinanceiroSistema(item?.status);
+  return ["cancelado","cancelada","estornado","estornada"].includes(status);
+}
+function statusFinanceiroRealizadoSistema(item){
+  return !statusFinanceiroAbertoSistema(item) && !statusFinanceiroCanceladoSistema(item);
+}
+function statusCobrancaFinanceiroSistema(statusInformado, total, pago){
+  const informado = textoStatusFinanceiroSistema(statusInformado);
+  const valorTotal = numeroFinanceiroSistema(total);
+  const valorPago = numeroFinanceiroSistema(pago);
+  if(valorPago <= 0) return "Em aberto";
+  if(valorTotal > 0 && valorPago < valorTotal) return "Parcial";
+  return ["em aberto","aberto","pendente","parcial"].includes(informado) ? "Pago" : (statusInformado || "Pago");
+}
+function valorAbertoCobrancaFinanceiroSistema(cobranca){
+  const total = numeroFinanceiroSistema(cobranca?.valorTotal ?? cobranca?.valor ?? 0);
+  const pago = numeroFinanceiroSistema(cobranca?.valorPago ?? cobranca?.pago ?? 0);
+  const status = statusCobrancaFinanceiroSistema(cobranca?.status, total, pago);
+  return status === "Pago" ? 0 : Math.max(total - pago, 0);
+}
+function resumoCobrancasFinanceiroSistema(lista){
+  return (Array.isArray(lista) ? lista : []).reduce((resumo,cobranca)=>{
+    const total = numeroFinanceiroSistema(cobranca?.valorTotal ?? cobranca?.valor ?? 0);
+    const pago = numeroFinanceiroSistema(cobranca?.valorPago ?? cobranca?.pago ?? 0);
+    const aberto = valorAbertoCobrancaFinanceiroSistema(cobranca);
+    resumo.total += total;
+    resumo.pago += pago;
+    resumo.aberto += aberto;
+    if(aberto > 0 && pago > 0) resumo.parcial += aberto;
+    return resumo;
+  },{total:0,pago:0,aberto:0,parcial:0});
 }
 function parcelasLancamentoFinanceiroSistema(item){
   const totalParcelas = Math.max(1, Math.floor(numeroFinanceiroSistema(item?.parcelas || 1)));
@@ -10378,27 +10424,27 @@ function renderCobrancasProntuario(){
   if(paciente) lista = lista.filter(x => x.paciente === paciente);
   else lista = [];
 
-  let total = 0, pago = 0;
-  lista.forEach(x=>{
-    total += Number(x.valorTotal || 0);
-    pago += Number(x.valorPago || 0);
-  });
-
-  const aberto = Math.max(total - pago, 0);
+  const resumoCobrancas = resumoCobrancasFinanceiroSistema(lista);
+  const total = resumoCobrancas.total;
+  const pago = resumoCobrancas.pago;
+  const aberto = resumoCobrancas.aberto;
   const setTxt = (id,v)=>{const el=document.getElementById(id); if(el) el.innerText = v;};
   setTxt("cobResumoTotal", moedaCob(total));
   setTxt("cobResumoPago", moedaCob(pago));
   setTxt("cobResumoAberto", moedaCob(aberto));
 
   tabela.innerHTML = lista.slice().reverse().map(x=>{
-    const saldo = Math.max(Number(x.valorTotal||0) - Number(x.valorPago||0), 0);
+    const totalItem = numeroFinanceiroSistema(x.valorTotal || x.valor || 0);
+    const pagoItem = numeroFinanceiroSistema(x.valorPago || x.pago || 0);
+    const status = statusCobrancaFinanceiroSistema(x.status, totalItem, pagoItem);
+    const saldo = valorAbertoCobrancaFinanceiroSistema(x);
     return `<tr>
       <td>${x.dataBR || ""}</td>
       <td><b>${x.procedimento || ""}</b><br><small>${x.obs || ""}</small></td>
       <td>${x.forma || ""}${x.parcelas > 1 ? " / " + x.parcelas + "x" : ""}</td>
-      <td>${x.status || ""}</td>
-      <td>${moedaCob(x.valorTotal)}</td>
-      <td>${moedaCob(x.valorPago)}</td>
+      <td>${status || ""}</td>
+      <td>${moedaCob(totalItem)}</td>
+      <td>${moedaCob(pagoItem)}</td>
       <td>${moedaCob(saldo)}</td>
       <td><button class="btn-mini" onclick="removerCobrancaProntuario(${x.id})">Remover</button></td>
     </tr>`;

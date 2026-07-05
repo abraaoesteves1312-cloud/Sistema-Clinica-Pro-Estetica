@@ -3332,8 +3332,9 @@ function atualizarUsuarioTopoSistema(){
   const pill=document.querySelector(".user-pill");
   const u=usuarioAtualSistema() || {nome:"Administrador",perfil:"Administrador"};
   if(pill){
-    const inicial=(u.nome || u.email || "A").trim().charAt(0).toUpperCase() || "A";
-    pill.innerHTML=`<div class="avatar">${escapeHtmlText(inicial)}</div> ${escapeHtmlText(u.nome || u.email || "Administrador")} · ${escapeHtmlText(perfilUsuarioSistema(u))}`;
+    const nomeExibido=u.email || u.nome || "Administrador";
+    const inicial=String(nomeExibido).trim().charAt(0).toUpperCase() || "A";
+    pill.innerHTML=`<div class="avatar">${escapeHtmlText(inicial)}</div> ${escapeHtmlText(nomeExibido)} · ${escapeHtmlText(perfilUsuarioSistema(u))}`;
   }
 }
 function usuarioTemAcessoTela(id){
@@ -12560,7 +12561,7 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   onlineAtual.ativo=true;
   onlineAtual.clinicId=perfil.clinic_id || onlineAtual.clinicId || "";
   const usuario={
-    nome:perfil.full_name || sessao.user.user_metadata?.full_name || email,
+    nome:email,
     email,
     role:perfil.role || perfilNormalizado,
     perfilOriginal:perfil.role || perfilNormalizado,
@@ -12585,7 +12586,7 @@ async function criarPrimeiroAdministradorLocal(email,senha){
   const emailAdmin=String(email || "").trim().toLowerCase();
   const usuariosAtuais=Array.isArray(conf.usuarios)?conf.usuarios:[];
   const usuario={
-    nome:"Administrador",
+    nome:emailAdmin,
     email:emailAdmin,
     perfil:"Administrador",
     acessos:todosAcessosSistema(),

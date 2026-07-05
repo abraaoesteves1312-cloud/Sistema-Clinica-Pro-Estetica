@@ -3432,7 +3432,7 @@ function entrarRapido(){
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
   verificarPlanoComercialAoEntrarSistema();
 }
-function sairSistema(){removerBloqueioPlanoComercialSistema();sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
+function sairSistema(){removerBloqueioPlanoComercialSistema();delete window.__loginEmailPendenteSistema;sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
   prontuarioAbaAtual = aba || "resumo";
@@ -12618,6 +12618,18 @@ window.entrarSistema = async function(){
     mensagemLoginProfissional("Informe e-mail e senha para acessar.");
     return;
   }
+  window.__loginEmailPendenteSistema=email;
+  const usuarioAnterior=usuarioAtualSistema();
+  const emailAnterior=emailNormalizadoSistema(usuarioAnterior && (usuarioAnterior.email || usuarioAnterior.login || usuarioAnterior.emailAcesso || usuarioAnterior.userEmail));
+  if(emailAnterior && emailAnterior!==email){
+    try{
+      const dbAnterior=clienteSupabaseSistema();
+      if(dbAnterior && dbAnterior.auth) await dbAnterior.auth.signOut();
+    }catch(e){}
+    try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
+    window.usuarioLogadoSistema={nome:email,email,perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true};
+    limparEscopoClinicaSistema();
+  }
   let usuario=null;
   const conf=configSistemaSeguro();
   try{
@@ -12632,11 +12644,14 @@ window.entrarSistema = async function(){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
   if(!usuario){
+    delete window.__loginEmailPendenteSistema;
+    window.usuarioLogadoSistema=null;
     mensagemLoginProfissional("E-mail ou senha inválidos.");
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
   definirUsuarioAtualSistema({...usuario,perfil:perfilUsuarioSistema(usuario),acessos:usuario.acessos || acessosPerfilSistema(usuario.perfil)});
+  delete window.__loginEmailPendenteSistema;
   const loginPage=document.getElementById("loginPage");
   const app=document.getElementById("app");
   const clinicaLogada=document.getElementById("clinicaLogada");
@@ -12786,11 +12801,14 @@ function usuarioSessaoAtualSistema(){
 }
 
 function identidadeOnlineAtualSistema(){
+  const emailPendente=emailNormalizadoSistema(window.__loginEmailPendenteSistema || "");
   const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema() || usuarioAtualSistema());
   const email=emailNormalizadoSistema(sessao && (sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail));
   const clinicId=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
-  const chaveId=clinicId || email || "sem_usuario";
-  return {email,clinicId,chave:`gepV2_online_config_${chaveId}`};
+  const emailAtual=emailPendente || email;
+  const clinicAtual=emailPendente ? "" : clinicId;
+  const chaveId=clinicAtual || emailAtual || "sem_usuario";
+  return {email:emailAtual,clinicId:clinicAtual,chave:`gepV2_online_config_${chaveId}`};
 }
 function lerConfigOnlineEscopoSistema(){
   const identidade=identidadeOnlineAtualSistema();

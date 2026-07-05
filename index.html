@@ -12532,11 +12532,17 @@ async function autenticarUsuarioConfigLocal(email,senha){
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
   if(!db) return null;
+  try{await db.auth.signOut();}catch(e){}
   const login=await db.auth.signInWithPassword({email,password:senha});
   if(login.error) return null;
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
   if(!sessao?.user?.id) return null;
+  const emailSessao=emailNormalizadoSistema(sessao.user.email || login.data?.user?.email || "");
+  if(emailSessao!==emailNormalizadoSistema(email)){
+    try{await db.auth.signOut();}catch(e){}
+    return null;
+  }
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
   if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
   const perfil=perfilResp.data;
@@ -12619,17 +12625,13 @@ window.entrarSistema = async function(){
     return;
   }
   window.__loginEmailPendenteSistema=email;
-  const usuarioAnterior=usuarioAtualSistema();
-  const emailAnterior=emailNormalizadoSistema(usuarioAnterior && (usuarioAnterior.email || usuarioAnterior.login || usuarioAnterior.emailAcesso || usuarioAnterior.userEmail));
-  if(emailAnterior && emailAnterior!==email){
-    try{
-      const dbAnterior=clienteSupabaseSistema();
-      if(dbAnterior && dbAnterior.auth) await dbAnterior.auth.signOut();
-    }catch(e){}
-    try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
-    window.usuarioLogadoSistema={nome:email,email,perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true};
-    limparEscopoClinicaSistema();
-  }
+  try{
+    const dbAnterior=clienteSupabaseSistema();
+    if(dbAnterior && dbAnterior.auth) await dbAnterior.auth.signOut();
+  }catch(e){}
+  try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
+  limparEscopoClinicaSistema();
+  window.usuarioLogadoSistema={nome:email,email,perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true};
   let usuario=null;
   const conf=configSistemaSeguro();
   try{
@@ -12897,6 +12899,7 @@ function coletarConfigOnlineSistema(){
 }
 function preencherConfigOnlineSistema(){
   const online=configOnlineSistema();
+  const identidade=identidadeOnlineAtualSistema();
   const ativo=document.getElementById("onlineAtivoSistema");
   const url=document.getElementById("onlineSupabaseUrl");
   const key=document.getElementById("onlineSupabaseAnonKey");
@@ -12907,7 +12910,7 @@ function preencherConfigOnlineSistema(){
   if(url) url.value=online.supabaseUrl || "";
   if(key) key.value=online.supabaseAnonKey || "";
   if(clinic) clinic.value=online.clinicId || "";
-  if(email) email.value=online.email || "";
+  if(email) email.value=identidade.email || online.email || "";
   if(senha) senha.value="";
 }
 function salvarConfigOnlineRapidoSistema(){

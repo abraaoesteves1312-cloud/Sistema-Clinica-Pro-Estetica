@@ -2915,6 +2915,17 @@ body > #resultadoPacientes{
         <tbody id="finTabelaPro"></tbody>
       </table>
 
+      <div class="fin-layout" style="margin-top:18px">
+        <div class="card">
+          <h3>Contas a receber</h3>
+          <div id="finContasReceber" class="list"></div>
+        </div>
+        <div class="card">
+          <h3>Faturas e proximas parcelas</h3>
+          <div id="finFaturasCartao" class="list"></div>
+        </div>
+      </div>
+
       <div id="listaFinanceiro" style="display:none"></div>
     </div>
   </div>
@@ -10082,6 +10093,84 @@ function parcelasLancamentoFinanceiroSistema(item){
 function parcelasFinanceiroSistema(lista){
   return (Array.isArray(lista) ? lista : []).flatMap(parcelasLancamentoFinanceiroSistema);
 }
+function textoFinanceiroSeguroSistema(valor){
+  if(typeof relatorioEsc === "function") return relatorioEsc(valor);
+  return String(valor ?? "").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function mesAnoFinanceiroSistema(data){
+  const texto = String(data || "");
+  const partes = texto.slice(0,7).split("-");
+  if(partes.length !== 2 || !partes[0] || !partes[1]) return "Sem data";
+  return `${partes[1]}/${partes[0]}`;
+}
+function pagamentoCartaoOuParceladoFinanceiroSistema(item){
+  const pagamento = textoStatusFinanceiroSistema(item?.pagamento || item?.pg || "");
+  const parcelas = Number(item?.parcelasTotal || item?.parcelas || 1);
+  return parcelas > 1 || pagamento.includes("credito") || pagamento.includes("cartao") || pagamento.includes("parcelado");
+}
+function faturasCartaoFinanceiroSistema(lista){
+  const mesAtual = hojeFinanceiro().slice(0,7);
+  const mapa = new Map();
+  parcelasFinanceiroSistema(lista)
+    .filter(x => x.realizado && String(x.tipo || "").toLowerCase() === "entrada" && pagamentoCartaoOuParceladoFinanceiroSistema(x))
+    .forEach(x=>{
+      const chave = String(x.data || "").slice(0,7);
+      if(!chave || chave < mesAtual) return;
+      if(!mapa.has(chave)) mapa.set(chave,{mes:chave,bruto:0,taxa:0,liquido:0,qtd:0});
+      const item = mapa.get(chave);
+      item.bruto += Number(x.valor || 0);
+      item.taxa += Number(x.taxaValor || 0);
+      item.liquido += Number(x.liquido || x.valor || 0);
+      item.qtd += 1;
+    });
+  return [...mapa.values()].sort((a,b)=>a.mes.localeCompare(b.mes)).slice(0,6);
+}
+function contasReceberFinanceiroSistema(){
+  const itens = [];
+  get("financeiroPro").forEach(x=>{
+    if(!statusFinanceiroAbertoSistema(x) || statusFinanceiroCanceladoSistema(x)) return;
+    itens.push({
+      data:x.data || hojeFinanceiro(),
+      origem:origemFinanceiroPro(x),
+      nome:x.pagador || x.paciente || "ClÃ­nica / despesa geral",
+      descricao:x.descricao || x.categoria || "LanÃ§amento em aberto",
+      valor:numeroFinanceiroSistema(x.valor || 0)
+    });
+  });
+  get("cobrancasProntuario").forEach(x=>{
+    const aberto = valorAbertoCobrancaFinanceiroSistema(x);
+    if(aberto <= 0) return;
+    itens.push({
+      data:x.vencimento || x.data || hojeFinanceiro(),
+      origem:"ProntuÃ¡rio",
+      nome:x.paciente || "Paciente",
+      descricao:x.procedimento || x.proc || "CobranÃ§a do procedimento",
+      valor:aberto
+    });
+  });
+  return itens.sort((a,b)=>String(a.data || "").localeCompare(String(b.data || "")));
+}
+function renderResumoAvancadoFinanceiroSistema(){
+  const contas = document.getElementById("finContasReceber");
+  if(contas){
+    const itens = contasReceberFinanceiroSistema();
+    const total = itens.reduce((s,x)=>s + Number(x.valor || 0),0);
+    contas.innerHTML = itens.length ? `
+      <div class="fin-mini-resumo"><b>Total em aberto:</b> ${moedaFinanceiro(total)}</div>
+      ${itens.slice(0,8).map(x=>`<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} Â· ${textoFinanceiroSeguroSistema(x.data)}</small></span><strong>${moedaFinanceiro(x.valor)}</strong></div>`).join("")}
+    ` : "<div class='item'>Nenhuma conta em aberto.</div>";
+  }
+
+  const faturas = document.getElementById("finFaturasCartao");
+  if(faturas){
+    const itens = faturasCartaoFinanceiroSistema(get("financeiroPro"));
+    faturas.innerHTML = itens.length ? itens.map(x=>`
+      <div class="item">
+        <span><b>${mesAnoFinanceiroSistema(x.mes + "-01")}</b><br>${x.qtd} parcela(s) prevista(s)<br><small>Taxas: ${moedaFinanceiro(x.taxa)} Â· LÃ­quido: ${moedaFinanceiro(x.liquido)}</small></span>
+        <strong>${moedaFinanceiro(x.bruto)}</strong>
+      </div>`).join("") : "<div class='item'>Nenhuma fatura futura encontrada.</div>";
+  }
+}
 function dadosTaxaFinanceiroPro(){
   const valor = Number(document.getElementById("finValorLanc")?.value || 0);
   const tipo = document.getElementById("finTipoLanc")?.value || "entrada";
@@ -10258,6 +10347,7 @@ function renderFinanceiroPro(){
   setTxt("finResumoSaidas", moedaFinanceiro(saidas));
   setTxt("finResumoTaxas", moedaFinanceiro(taxas));
   setTxt("finResumoLucro", moedaFinanceiro(entradas - saidas - taxas));
+  renderResumoAvancadoFinanceiroSistema();
 
   const tb = document.getElementById("finTabelaPro");
   if(!tb) return;

@@ -9766,7 +9766,7 @@ body > #resultadoPacientes{
 
 function obterFinanceiroOrganizado(){
   const novo = get("financeiroPro");
-  if(novo.length) return novo;
+  if(novo.length) return financeiroExpandidoSistema(novo);
   return get("financeiro").map(x=>({
     tipo:x.tipo || "Entrada",
     valor:Number(x.valor || 0),
@@ -9787,11 +9787,13 @@ function resumoFinanceiroSistema(){
     const taxa = Number(x.taxaValor || 0);
     const tipo = String(x.tipo || "").toLowerCase();
     if(tipo === "saída" || tipo === "saida"){
-      resumo.saidas += valor;
+      if(statusPagoFinanceiroSistema(x)) resumo.saidas += valor;
     }else{
-      resumo.entradas += valor;
-      resumo.taxas += taxa;
-      resumo.liquido += liquido;
+      if(statusPagoFinanceiroSistema(x)){
+        resumo.entradas += valor;
+        resumo.taxas += taxa;
+        resumo.liquido += liquido;
+      }
     }
   });
   resumo.saldo = resumo.entradas - resumo.saidas - resumo.taxas;
@@ -9805,6 +9807,15 @@ function resumoFinanceiroMesAtual(){
     .reduce((total,x)=>{const tipo=String(x.tipo||"").toLowerCase(); return total + (tipo === "saída" || tipo === "saida" ? 0 : Number(x.liquido ?? x.valor ?? 0));},0);
 }
 
+resumoFinanceiroMesAtual = function(){
+  const hoje = new Date().toISOString().slice(0,7);
+  return obterFinanceiroOrganizado()
+    .filter(x=>String(x.data || x.vencimento || "").slice(0,7) === hoje)
+    .reduce((total,x)=>{
+      const tipo=String(x.tipo||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      return total + ((tipo==="saida" || !statusPagoFinanceiroSistema(x)) ? 0 : Number(x.liquido ?? x.valor ?? 0));
+    },0);
+};
 function itemResumoAgendaDash(x){
   const data = typeof formatarDataAgenda === "function" ? formatarDataAgenda(x.data) : (x.data || "");
   const paciente = escapeHtmlText(x.paciente || "Paciente não informado");
@@ -10030,6 +10041,133 @@ function mesAtualFinanceiro(data){
   const h = new Date();
   return d.getMonth() === h.getMonth() && d.getFullYear() === h.getFullYear();
 }
+function numeroFinanceiroSistema(valor){
+  const n=Number(valor || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+function arredondarFinanceiroSistema(valor){
+  return Math.round(numeroFinanceiroSistema(valor)*100)/100;
+}
+function adicionarMesesFinanceiroSistema(data,meses){
+  const base=data ? new Date(data+"T00:00:00") : new Date();
+  if(Number.isNaN(base.getTime())) return hojeFinanceiro();
+  const dia=base.getDate();
+  const alvo=new Date(base.getFullYear(),base.getMonth()+Number(meses || 0),1);
+  const ultimo=new Date(alvo.getFullYear(),alvo.getMonth()+1,0).getDate();
+  alvo.setDate(Math.min(dia,ultimo));
+  return alvo.toISOString().slice(0,10);
+}
+function chaveMesFinanceiroSistema(data){
+  const d=data ? new Date(data+"T00:00:00") : new Date();
+  if(Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+function statusPagoFinanceiroSistema(item){
+  const s=String(item && item.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  return s==="pago" || s==="recebido" || s==="quitado";
+}
+function pagamentoCartaoFinanceiroSistema(item){
+  const p=String(item && (item.pagamento || item.forma || item.pg) || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  return p.includes("credito") || p.includes("debito") || p.includes("cartao") || p.includes("parcelado");
+}
+function parteParcelaFinanceiroSistema(total,parcelas,numero){
+  total=arredondarFinanceiroSistema(total);
+  parcelas=Math.max(1,Number(parcelas || 1));
+  numero=Number(numero || 1);
+  const base=arredondarFinanceiroSistema(total/parcelas);
+  if(numero<parcelas) return base;
+  return arredondarFinanceiroSistema(total - (base*(parcelas-1)));
+}
+function criarParcelasFinanceiroSistema(base){
+  const totalParcelas=Math.max(1,Number(base.parcelasTotal || base.parcelas || 1));
+  const idBase=String(base.grupoParcelasId || base.id || Date.now());
+  const valorTotal=numeroFinanceiroSistema(base.valor);
+  const taxaTotal=numeroFinanceiroSistema(base.taxaValor);
+  const liquidoTotal=numeroFinanceiroSistema(base.liquido || (valorTotal-taxaTotal));
+  const saida=[];
+  for(let i=1;i<=totalParcelas;i++){
+    const dataParcela=adicionarMesesFinanceiroSistema(base.data || hojeFinanceiro(),i-1);
+    const valor=parteParcelaFinanceiroSistema(valorTotal,totalParcelas,i);
+    const taxaValor=parteParcelaFinanceiroSistema(taxaTotal,totalParcelas,i);
+    const liquido=parteParcelaFinanceiroSistema(liquidoTotal,totalParcelas,i);
+    saida.push({
+      ...base,
+      id:totalParcelas>1 ? `${idBase}-${i}` : idBase,
+      grupoParcelasId:idBase,
+      parcelaNumero:i,
+      parcelasTotal:totalParcelas,
+      parcelas:totalParcelas,
+      data:dataParcela,
+      vencimento:dataParcela,
+      competencia:chaveMesFinanceiroSistema(dataParcela),
+      valor,
+      taxaValor,
+      liquido,
+      descricao:totalParcelas>1 ? `${base.descricao || ""} - Parcela ${i}/${totalParcelas}`.trim() : (base.descricao || "")
+    });
+  }
+  return saida;
+}
+function parcelasDoLancamentoFinanceiroSistema(item){
+  if(!item) return [];
+  if(item.parcelaNumero || item.parcelasTotal) return [{
+    ...item,
+    valor:numeroFinanceiroSistema(item.valor),
+    taxaValor:numeroFinanceiroSistema(item.taxaValor),
+    liquido:numeroFinanceiroSistema(item.liquido || item.valor),
+    vencimento:item.vencimento || item.data || hojeFinanceiro(),
+    competencia:item.competencia || chaveMesFinanceiroSistema(item.data || item.vencimento)
+  }];
+  const totalParcelas=Math.max(1,Number(item.parcelas || 1));
+  if(totalParcelas<=1) return [{
+    ...item,
+    valor:numeroFinanceiroSistema(item.valor),
+    taxaValor:numeroFinanceiroSistema(item.taxaValor),
+    liquido:numeroFinanceiroSistema(item.liquido || item.valor),
+    parcelaNumero:1,
+    parcelasTotal:1,
+    vencimento:item.vencimento || item.data || hojeFinanceiro(),
+    competencia:item.competencia || chaveMesFinanceiroSistema(item.data || item.vencimento)
+  }];
+  return criarParcelasFinanceiroSistema({...item,__virtual:true});
+}
+function financeiroExpandidoSistema(lista){
+  return (Array.isArray(lista)?lista:[]).flatMap(parcelasDoLancamentoFinanceiroSistema);
+}
+function linhasGrupoFinanceiroSistema(lista,id){
+  const alvo=String(id || "");
+  return (Array.isArray(lista)?lista:[]).filter(x=>String(x.id)===alvo || String(x.grupoParcelasId || "")===alvo);
+}
+function resumoGrupoFinanceiroSistema(lista,id){
+  const linhas=linhasGrupoFinanceiroSistema(lista,id);
+  if(!linhas.length) return null;
+  const primeira=[...linhas].sort((a,b)=>String(a.data||"").localeCompare(String(b.data||"")))[0];
+  const totalParcelas=Math.max(...linhas.map(x=>Number(x.parcelasTotal || x.parcelas || 1)),linhas.length);
+  return {
+    ...primeira,
+    id:primeira.grupoParcelasId || primeira.id,
+    descricao:String(primeira.descricao || "").replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i,""),
+    valor:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.valor),0)),
+    taxaValor:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.taxaValor),0)),
+    liquido:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.liquido || x.valor),0)),
+    parcelas:totalParcelas,
+    parcelasTotal:totalParcelas,
+    status:linhas.every(statusPagoFinanceiroSistema) ? "Pago" : "Em aberto"
+  };
+}
+function receitaRealFinanceiroSistema(item){
+  return item && item.tipo==="entrada" && statusPagoFinanceiroSistema(item) ? numeroFinanceiroSistema(item.valor) : 0;
+}
+function saidaRealFinanceiroSistema(item){
+  return item && item.tipo==="saida" && statusPagoFinanceiroSistema(item) ? numeroFinanceiroSistema(item.valor) : 0;
+}
+function resumoFaturasFinanceiroSistema(lista){
+  const expandida=financeiroExpandidoSistema(lista).filter(x=>x.tipo==="entrada" && pagamentoCartaoFinanceiroSistema(x));
+  const mesAtual=chaveMesFinanceiroSistema(hojeFinanceiro());
+  const proximoMes=chaveMesFinanceiroSistema(adicionarMesesFinanceiroSistema(hojeFinanceiro(),1));
+  const totalMes=mes=>expandida.filter(x=>chaveMesFinanceiroSistema(x.data || x.vencimento)===mes).reduce((s,x)=>s+numeroFinanceiroSistema(x.valor),0);
+  return {atual:totalMes(mesAtual),proxima:totalMes(proximoMes)};
+}
 function dadosTaxaFinanceiroPro(){
   const valor = Number(document.getElementById("finValorLanc")?.value || 0);
   const tipo = document.getElementById("finTipoLanc")?.value || "entrada";
@@ -10104,11 +10242,14 @@ function salvarLancamentoFinanceiroPro(){
   const taxaValor = dadosTaxa.taxaValor;
   const liquido = dadosTaxa.liquido;
 
-  const lista = get("financeiroPro");
+  let lista = get("financeiroPro");
   const editId = document.getElementById("finEditId")?.value || "";
-  const existente = editId ? lista.find(x=>String(x.id)===String(editId)) : null;
+  const existente = editId ? (lista.find(x=>String(x.id)===String(editId)) || resumoGrupoFinanceiroSistema(lista,editId)) : null;
+  const grupoEdicao = existente ? String(existente.grupoParcelasId || existente.id || editId) : "";
+  const idBase = existente ? grupoEdicao : String(Date.now());
   const item = {
-    id: existente ? existente.id : Date.now(),
+    id: idBase,
+    grupoParcelasId: idBase,
     data: document.getElementById("finDataLanc")?.value || hojeFinanceiro(),
     tipo,
     paciente: document.getElementById("finPaciente")?.value || "",
@@ -10116,7 +10257,8 @@ function salvarLancamentoFinanceiroPro(){
     descricao: document.getElementById("finDescLanc")?.value || "",
     categoria: document.getElementById("finCategoriaLanc")?.value || "",
     pagamento: document.getElementById("finFormaLanc")?.value || "",
-    parcelas: Number(document.getElementById("finParcelasLanc")?.value || 1),
+    parcelas: Math.max(1,Number(document.getElementById("finParcelasLanc")?.value || 1)),
+    parcelasTotal: Math.max(1,Number(document.getElementById("finParcelasLanc")?.value || 1)),
     origem: existente ? origemFinanceiroPro(existente) : "Manual",
     taxaPerc,
     taxaValor,
@@ -10124,11 +10266,12 @@ function salvarLancamentoFinanceiroPro(){
     liquido,
     status: document.getElementById("finStatusLanc")?.value || "Pago"
   };
+  const parcelasGeradas = criarParcelasFinanceiroSistema(item);
   if(existente){
-    const idx = lista.findIndex(x=>String(x.id)===String(editId));
-    if(idx >= 0) lista[idx] = {...existente,...item};
+    lista = lista.filter(x=>String(x.id)!==String(editId) && String(x.grupoParcelasId || x.id)!==grupoEdicao);
+    lista.push(...parcelasGeradas);
   }else{
-    lista.push(item);
+    lista.push(...parcelasGeradas);
   }
   set("financeiroPro", lista);
 
@@ -10137,10 +10280,11 @@ function salvarLancamentoFinanceiroPro(){
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
 }
 function editarLancamentoFinanceiroPro(id){
-  const item = get("financeiroPro").find(x=>String(x.id)===String(id));
+  const listaFinanceiro=get("financeiroPro");
+  const item = listaFinanceiro.find(x=>String(x.id)===String(id)) || resumoGrupoFinanceiroSistema(listaFinanceiro,id);
   if(!item){alert("Lançamento não encontrado.");return;}
   const editId = document.getElementById("finEditId");
-  if(editId) editId.value = item.id;
+  if(editId) editId.value = item.grupoParcelasId || item.id;
   selecionarValorFinanceiroPro("finTipoLanc", item.tipo || "entrada");
   const data = document.getElementById("finDataLanc");
   if(data) data.value = item.data || hojeFinanceiro();
@@ -10175,7 +10319,8 @@ function cancelarEdicaoFinanceiroPro(){
 function removerLancamentoFinanceiroPro(id){
   if(!confirm("Remover lançamento financeiro?")) return;
   try{excluirOnlinePorLocalIdSistema("financial_entries",id);}catch(e){}
-  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id)));
+  const alvo=String(id);
+  set("financeiroPro", get("financeiroPro").filter(x => String(x.id) !== alvo && String(x.grupoParcelasId || x.id) !== alvo));
   renderFinanceiroPro();
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
 }
@@ -10183,7 +10328,8 @@ function renderFinanceiroPro(){
   const data = document.getElementById("finDataLanc");
   if(data && !data.value) data.value = hojeFinanceiro();
 
-  let lista = get("financeiroPro");
+  const listaCompleta = financeiroExpandidoSistema(get("financeiroPro"));
+  let lista = listaCompleta;
   const ini = document.getElementById("finFiltroInicio")?.value;
   const fim = document.getElementById("finFiltroFim")?.value;
 
@@ -10191,11 +10337,12 @@ function renderFinanceiroPro(){
   if(fim) lista = lista.filter(x => x.data <= fim);
 
   let entradas = 0, saidas = 0, taxas = 0;
-  get("financeiroPro").filter(x => mesAtualFinanceiro(x.data)).forEach(x=>{
-    if(x.tipo === "entrada") entradas += Number(x.valor || 0);
-    if(x.tipo === "saida") saidas += Number(x.valor || 0);
-    taxas += Number(x.taxaValor || 0);
+  listaCompleta.filter(x => mesAtualFinanceiro(x.data || x.vencimento)).forEach(x=>{
+    entradas += receitaRealFinanceiroSistema(x);
+    saidas += saidaRealFinanceiroSistema(x);
+    if(statusPagoFinanceiroSistema(x)) taxas += Number(x.taxaValor || 0);
   });
+  const faturas=resumoFaturasFinanceiroSistema(get("financeiroPro"));
 
   const setTxt = (id, valor) => {
     const el = document.getElementById(id);
@@ -10206,14 +10353,19 @@ function renderFinanceiroPro(){
   setTxt("finResumoSaidas", moedaFinanceiro(saidas));
   setTxt("finResumoTaxas", moedaFinanceiro(taxas));
   setTxt("finResumoLucro", moedaFinanceiro(entradas - saidas - taxas));
+  const statusForm=document.getElementById("finEdicaoStatus");
+  const editando=!!document.getElementById("finEditId")?.value;
+  if(statusForm && !editando) statusForm.innerText=`Fatura atual no cartao: ${moedaFinanceiro(faturas.atual)} | Proxima fatura: ${moedaFinanceiro(faturas.proxima)}. Para corrigir um lancamento, clique em Editar.`;
 
   const tb = document.getElementById("finTabelaPro");
   if(!tb) return;
 
   tb.innerHTML = lista.slice().reverse().map(x=>{
     const tipoTag = x.tipo === "entrada" ? "tag-ok" : "tag-ruim";
-    const statusTag = x.status === "Pago" ? "tag-ok" : "tag-alerta";
+    const statusTag = statusPagoFinanceiroSistema(x) ? "tag-ok" : "tag-alerta";
     const origem = origemFinanceiroPro(x);
+    const acaoId = x.grupoParcelasId || x.parentId || x.id;
+    const rotuloParcela = Number(x.parcelasTotal || x.parcelas || 1)>1 ? `Parcela ${x.parcelaNumero || 1}/${x.parcelasTotal || x.parcelas}` : "";
     return `
       <tr>
         <td>${x.data || ""}</td>
@@ -10222,12 +10374,12 @@ function renderFinanceiroPro(){
         <td>${x.paciente || "Clínica / despesa geral"}</td>
         <td>${x.pagador || x.paciente || "Clínica / despesa geral"}</td>
         <td><b>${x.descricao || ""}</b><br><small>${x.categoria || ""}</small></td>
-        <td>${x.pagamento || ""}${x.parcelas > 1 ? " / " + x.parcelas + "x" : ""}</td>
+        <td>${x.pagamento || ""}${Number(x.parcelasTotal || x.parcelas || 1) > 1 ? " / " + (x.parcelasTotal || x.parcelas) + "x" : ""}<br><small>${rotuloParcela}</small></td>
         <td><span class="${statusTag}">${x.status || ""}</span></td>
         <td>${moedaFinanceiro(x.valor)}</td>
         <td>${Number(x.taxaPerc || 0).toLocaleString("pt-BR",{maximumFractionDigits:2})}%<br><small>${moedaFinanceiro(x.taxaValor)}</small></td>
         <td>${moedaFinanceiro(x.liquido)}</td>
-        <td><button class="btn-mini" onclick="editarLancamentoFinanceiroPro('${x.id}')">Editar</button> <button class="btn-mini" onclick="removerLancamentoFinanceiroPro('${x.id}')">Remover</button></td>
+        <td><button class="btn-mini" onclick="editarLancamentoFinanceiroPro('${acaoId}')">Editar</button> <button class="btn-mini" onclick="removerLancamentoFinanceiroPro('${acaoId}')">Remover</button></td>
       </tr>`;
   }).join("") || "<tr><td colspan='12'>Nenhum lançamento financeiro registrado.</td></tr>";
 }
@@ -10316,10 +10468,15 @@ function salvarCobrancaProntuario(){
   cobrancas.push(item);
   set("cobrancasProntuario", cobrancas);
 
-  if(valorPago > 0){
+  if((valorPago > 0) || (valorTotal > 0 && status !== "Pago")){
     const fin = get("financeiroPro");
-    fin.push({
+    const valorFinanceiro = valorPago > 0 ? valorPago : (valorTotal || valorPago);
+    const taxaFinanceiro = valorPago > 0 ? taxaValor : 0;
+    const liquidoFinanceiro = valorPago > 0 ? liquido : valorFinanceiro;
+    const statusFinanceiro = valorPago > 0 && status === "Pago" ? "Pago" : status;
+    const baseFinanceira = {
       id: item.id,
+      grupoParcelasId: String(item.id),
       data: item.data,
       tipo: "entrada",
       paciente,
@@ -10329,12 +10486,14 @@ function salvarCobrancaProntuario(){
       origem: "Prontuário",
       pagamento: forma,
       parcelas,
+      parcelasTotal: parcelas,
       taxaPerc,
-      taxaValor,
-      valor: valorPago,
-      liquido,
-      status
-    });
+      taxaValor: taxaFinanceiro,
+      valor: valorFinanceiro,
+      liquido: liquidoFinanceiro,
+      status: statusFinanceiro
+    };
+    fin.push(...criarParcelasFinanceiroSistema(baseFinanceira));
     set("financeiroPro", fin);
   }
 
@@ -10357,7 +10516,8 @@ function removerCobrancaProntuario(id){
   try{excluirOnlinePorLocalIdSistema("procedure_charges",id);}catch(e){}
   try{excluirOnlinePorLocalIdSistema("financial_entries",id);}catch(e){}
   set("cobrancasProntuario", get("cobrancasProntuario").filter(x => Number(x.id) !== Number(id)));
-  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id)));
+  const alvo=String(id);
+  set("financeiroPro", get("financeiroPro").filter(x => String(x.id) !== alvo && String(x.grupoParcelasId || x.id) !== alvo));
   renderCobrancasProntuario();
   try{ renderFinanceiroPro(); }catch(e){}
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
@@ -14910,8 +15070,14 @@ async function enviarFinanceiroOnlineSistema(){
   if(msg) msg.innerText=falhas ? `Financeiro enviado parcialmente: ${ok} registro(s), ${falhas} falha(s). Último erro: ${ultimoErro}. Se aparecer tabela não encontrada, rode o SQL da etapa 6 no Supabase.` : `${ok} registro(s) financeiros enviados para online com sucesso.`;
 }
 function financeiroOnlineParaLocalSistema(x){
+  const localId=String(x.local_id || x.id || "");
+  const totalParcelas=Number(x.installments || 1);
+  const matchParcela=totalParcelas>1 ? localId.match(/^(.*)-(\d+)$/) : null;
   return {
     id:x.local_id || x.id,
+    grupoParcelasId:matchParcela ? matchParcela[1] : "",
+    parcelaNumero:matchParcela ? Number(matchParcela[2]) : undefined,
+    parcelasTotal:totalParcelas,
     data:x.entry_date || "",
     tipo:x.type || "entrada",
     paciente:x.patients && x.patients.full_name ? x.patients.full_name : "",
@@ -14919,7 +15085,7 @@ function financeiroOnlineParaLocalSistema(x){
     descricao:x.description || "",
     categoria:x.category || "",
     pagamento:x.payment_method || "",
-    parcelas:Number(x.installments || 1),
+    parcelas:totalParcelas,
     taxaPerc:Number(x.fee_percent || 0),
     taxaValor:Number(x.fee_value || 0),
     valor:Number(x.gross_value || 0),
@@ -16015,7 +16181,7 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-05-session-reset-v13";
+const versaoAppInstalavelSistema = "2026-07-05-financeiro-parcelas-v14";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
 

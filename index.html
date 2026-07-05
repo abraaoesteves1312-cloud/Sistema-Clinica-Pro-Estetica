@@ -3433,16 +3433,42 @@ function entrarRapido(){
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
   verificarPlanoComercialAoEntrarSistema();
 }
+function camposCentralOnlineTelaSistema(id){
+  try{return [...document.querySelectorAll(`[id="${id}"]`)]}catch(e){return []}
+}
+function valorCentralOnlineTelaSistema(id){
+  const campos=camposCentralOnlineTelaSistema(id);
+  const preenchido=campos.map(c=>String(c.value || "").trim()).reverse().find(Boolean);
+  return preenchido || "";
+}
+function aplicarValorCentralOnlineTelaSistema(id,valor){
+  camposCentralOnlineTelaSistema(id).forEach(c=>{c.value=valor || "";});
+}
+function aplicarMarcacaoCentralOnlineTelaSistema(id,valor){
+  camposCentralOnlineTelaSistema(id).forEach(c=>{c.checked=!!valor;});
+}
+function aplicarTextoCentralOnlineTelaSistema(texto){
+  camposCentralOnlineTelaSistema("onlineStatusSistema").forEach(c=>{c.innerText=texto || "";});
+}
+function emailUsuarioLogadoAtualSistema(){
+  const usuario=usuarioAtualSistema();
+  return emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
+}
+function getCurrentClinicId(){
+  const usuario=usuarioAtualSistema();
+  const clinicUsuario=normalizarEscopoClinicaSistema(usuario && (usuario.onlineClinicId || usuario.clinicId || usuario.clinic_id));
+  return clinicUsuario || normalizarEscopoClinicaSistema(escopoClinicaAtualSistema()) || emailUsuarioLogadoAtualSistema();
+}
+function getClinicScopedKey(base){
+  const clinicId=getCurrentClinicId() || "sem_clinica";
+  return `${base}_${clinicId}`;
+}
 function limparCamposCentralOnlineTelaSistema(emailAtual=""){
   const email=emailNormalizadoSistema(emailAtual || "");
-  const campoEmail=document.getElementById("onlineEmailSistema");
-  const campoClinic=document.getElementById("onlineClinicId");
-  const campoSenha=document.getElementById("onlineSenhaSistema");
-  const status=document.getElementById("onlineStatusSistema");
-  if(campoEmail) campoEmail.value=email;
-  if(campoClinic) campoClinic.value="";
-  if(campoSenha) campoSenha.value="";
-  if(status) status.innerText=email ? `Central Online pronta para ${email}. Entre online para carregar a clinica correta.` : "Central Online limpa. Entre com um usuario para carregar a clinica correta.";
+  aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",email);
+  aplicarValorCentralOnlineTelaSistema("onlineClinicId","");
+  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
+  aplicarTextoCentralOnlineTelaSistema(email ? `Central Online pronta para ${email}. Entre online para carregar a clinica correta.` : "Central Online limpa. Entre com um usuario para carregar a clinica correta.");
 }
 async function sairSistema(){try{const db=clienteSupabaseSistema();if(db&&db.auth) await db.auth.signOut();}catch(e){}try{window.__clienteSupabaseSistema=null;window.__clienteSupabaseChave="";}catch(e){}limparCamposCentralOnlineTelaSistema("");removerBloqueioPlanoComercialSistema();delete window.__loginEmailPendenteSistema;sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
@@ -5030,7 +5056,7 @@ function configSistema(){
   try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
   try{conf=JSON.parse(localStorage.getItem(chaveLocalSistema("config")) || "{}") || {}}catch(e){conf={}}
   if(chaveLocalSistema("config")!=="gepV2_config"){
-    conf.online={...(base.online || {}),...(conf.online || {})};
+    conf.online={...(conf.online || {})};
   }
   if(!Array.isArray(conf.usuarios) || !conf.usuarios.some(u=>u && String(u.email || "").trim() && (u.senhaHash || u.senha))){
     conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
@@ -12456,16 +12482,7 @@ function salvarConfigSistemaSeguro(conf){
   if(chave!=="gepV2_config"){
     let base={};
     try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
-    const onlineBase={...(base.online || {})};
-    if(final.online){
-      if(final.online.supabaseUrl) onlineBase.supabaseUrl=final.online.supabaseUrl;
-      if(final.online.supabaseAnonKey) onlineBase.supabaseAnonKey=final.online.supabaseAnonKey;
-      if(typeof final.online.ativo==="boolean") onlineBase.ativo=final.online.ativo;
-    }
-    delete onlineBase.clinicId;
-    delete onlineBase.email;
-    delete onlineBase.senha;
-    base.online=onlineBase;
+    base.online={};
     localStorage.setItem("gepV2_config",JSON.stringify(base));
   }
   salvarBackupAcessoSistema(final.usuarios);
@@ -12822,30 +12839,31 @@ function identidadeOnlineAtualSistema(){
   const email=emailNormalizadoSistema(sessao && (sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail));
   const clinicId=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
   const emailAtual=emailPendente || email;
-  const clinicAtual=emailPendente ? "" : clinicId;
-  const chaveId=clinicAtual || emailAtual || "sem_usuario";
-  return {email:emailAtual,clinicId:clinicAtual,chave:`gepV2_online_config_${chaveId}`};
+  const clinicAtual=emailPendente ? "" : (clinicId || normalizarEscopoClinicaSistema(getCurrentClinicId()));
+  const chave=getClinicScopedKey("gepV2_online_config");
+  return {email:emailAtual,clinicId:clinicAtual,chave};
 }
 function lerConfigOnlineEscopoSistema(){
   const identidade=identidadeOnlineAtualSistema();
-  try{return JSON.parse(localStorage.getItem(identidade.chave) || "{}") || {}}catch(e){return {}}
+  try{
+    const dados=JSON.parse(localStorage.getItem(identidade.chave) || "{}") || {};
+    const emailSalvo=emailNormalizadoSistema(dados.email || "");
+    const clinicSalvo=normalizarEscopoClinicaSistema(dados.clinicId || dados.clinic_id || "");
+    if(identidade.email && emailSalvo && emailSalvo!==identidade.email) return {};
+    if(identidade.clinicId && clinicSalvo && clinicSalvo!==identidade.clinicId) return {};
+    return dados;
+  }catch(e){return {}}
 }
 function salvarConfigOnlineEscopoSistema(online){
   const identidade=identidadeOnlineAtualSistema();
   const dados=ajustarOnlineAoUsuarioAtualSistema(online || {});
+  dados.email=identidade.email || dados.email || "";
+  dados.clinicId=identidade.clinicId || dados.clinicId || "";
   localStorage.setItem(identidade.chave,JSON.stringify(dados));
 }
 function salvarConfigOnlineBaseSistema(online){
   const conf=configSistemaSeguro();
-  const base={...(conf.online || {})};
-  if(online.supabaseUrl) base.supabaseUrl=online.supabaseUrl;
-  if(online.supabaseAnonKey) base.supabaseAnonKey=online.supabaseAnonKey;
-  if(typeof online.ativo==="boolean") base.ativo=online.ativo;
-  delete base.clinicId;
-  delete base.email;
-  delete base.senha;
-  delete base.token;
-  conf.online=base;
+  conf.online={};
   salvarConfigSistemaSeguro(conf);
 }
 function ajustarOnlineAoUsuarioAtualSistema(online){
@@ -12869,17 +12887,10 @@ function ajustarOnlineAoUsuarioAtualSistema(online){
 }
 
 function configOnlineSistema(){
-  const conf=configSistemaSeguro();
-  const base={...(conf.online || {})};
-  delete base.clinicId;
-  delete base.email;
-  delete base.senha;
-  delete base.token;
-  const online={...base,...lerConfigOnlineEscopoSistema()};
+  const online={...lerConfigOnlineEscopoSistema()};
   const ajustado=ajustarOnlineAoUsuarioAtualSistema(online);
   if(online.supabaseUrl && ajustado.supabaseUrl!==online.supabaseUrl){
     ajustado.supabaseUrl=limparUrlSupabaseSistema(ajustado.supabaseUrl);
-    salvarConfigOnlineBaseSistema(ajustado);
     salvarConfigOnlineEscopoSistema(ajustado);
   }
   return ajustado;
@@ -12902,38 +12913,33 @@ function limparChaveSupabaseSistema(valor){
 function coletarConfigOnlineSistema(){
   const anterior=configOnlineSistema();
   const identidade=identidadeOnlineAtualSistema();
+  const emailAtual=identidade.email || emailUsuarioLogadoAtualSistema();
   return ajustarOnlineAoUsuarioAtualSistema({
-    ativo:!!document.getElementById("onlineAtivoSistema")?.checked,
-    supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || ""),
-    supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || ""),
-    clinicId:identidade.clinicId || (document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim(),
-    email:identidade.email || (document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase(),
-    senha:document.getElementById("onlineSenhaSistema")?.value || ""
+    ativo:camposCentralOnlineTelaSistema("onlineAtivoSistema").some(c=>c.checked),
+    supabaseUrl:limparUrlSupabaseSistema(valorCentralOnlineTelaSistema("onlineSupabaseUrl") || anterior.supabaseUrl || ""),
+    supabaseAnonKey:limparChaveSupabaseSistema(valorCentralOnlineTelaSistema("onlineSupabaseAnonKey") || anterior.supabaseAnonKey || ""),
+    clinicId:identidade.clinicId || (valorCentralOnlineTelaSistema("onlineClinicId") || anterior.clinicId || "").trim(),
+    email:emailAtual || "",
+    senha:valorCentralOnlineTelaSistema("onlineSenhaSistema") || ""
   });
 }
 function preencherConfigOnlineSistema(){
   const online=configOnlineSistema();
   const identidade=identidadeOnlineAtualSistema();
-  const ativo=document.getElementById("onlineAtivoSistema");
-  const url=document.getElementById("onlineSupabaseUrl");
-  const key=document.getElementById("onlineSupabaseAnonKey");
-  const clinic=document.getElementById("onlineClinicId");
-  const email=document.getElementById("onlineEmailSistema");
-  const senha=document.getElementById("onlineSenhaSistema");
-  if(ativo) ativo.checked=!!online.ativo;
-  if(url) url.value=online.supabaseUrl || "";
-  if(key) key.value=online.supabaseAnonKey || "";
-  if(clinic) clinic.value=online.clinicId || "";
-  if(email) email.value=identidade.email || online.email || "";
-  if(senha) senha.value="";
+  const emailAtual=identidade.email || emailUsuarioLogadoAtualSistema();
+  aplicarMarcacaoCentralOnlineTelaSistema("onlineAtivoSistema",!!online.ativo);
+  aplicarValorCentralOnlineTelaSistema("onlineSupabaseUrl",online.supabaseUrl || "");
+  aplicarValorCentralOnlineTelaSistema("onlineSupabaseAnonKey",online.supabaseAnonKey || "");
+  aplicarValorCentralOnlineTelaSistema("onlineClinicId",online.clinicId || "");
+  aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailAtual || "");
+  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
 }
 function salvarConfigOnlineRapidoSistema(){
   const online=coletarConfigOnlineSistema();
   salvarConfigOnlineBaseSistema(online);
   salvarConfigOnlineEscopoSistema(online);
   preencherConfigOnlineSistema();
-  const msg=document.getElementById("onlineStatusSistema");
-  if(msg) msg.innerText=online.ativo ? `Conexão online salva com URL corrigida: ${online.supabaseUrl || "vazia"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.";
+  aplicarTextoCentralOnlineTelaSistema(online.ativo ? `Conexão online salva para ${online.email || "usuario atual"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.");
 }
 function limparClinicaOnlineLocalSistema(){
   const online=configOnlineSistema();
@@ -12941,10 +12947,8 @@ function limparClinicaOnlineLocalSistema(){
   online.senha="";
   delete online.token;
   salvarConfigOnlineEscopoSistema(online);
-  const campoClinic=document.getElementById("onlineClinicId");
-  const campoSenha=document.getElementById("onlineSenhaSistema");
-  if(campoClinic) campoClinic.value="";
-  if(campoSenha) campoSenha.value="";
+  aplicarValorCentralOnlineTelaSistema("onlineClinicId","");
+  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
 }
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
@@ -12977,8 +12981,7 @@ async function garantirSessaoOnlineDoUsuarioAtualSistema(){
 garantirSessaoOnlineDoUsuarioAtualSistema = async function(){
   const usuario=usuarioAtualSistema();
   const emailLocal=emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
-  const campoEmail=document.getElementById("onlineEmailSistema");
-  if(emailLocal && campoEmail) campoEmail.value=emailLocal;
+  if(emailLocal) aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
   if(!emailLocal) return true;
   const db=clienteSupabaseSistema();
   if(!db || !db.auth) return true;
@@ -12988,9 +12991,8 @@ garantirSessaoOnlineDoUsuarioAtualSistema = async function(){
     if(emailOnline && emailOnline!==emailLocal){
       await db.auth.signOut();
       limparClinicaOnlineLocalSistema();
-      if(campoEmail) campoEmail.value=emailLocal;
-      const msg=document.getElementById("onlineStatusSistema");
-      if(msg) msg.innerText=`Sessao online de ${emailOnline} desconectada. Entre online com ${emailLocal} para carregar a clinica correta.`;
+      aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
+      aplicarTextoCentralOnlineTelaSistema(`Sessao online de ${emailOnline} desconectada. Entre online com ${emailLocal} para carregar a clinica correta.`);
       return false;
     }
     return true;
@@ -13070,21 +13072,20 @@ async function testarConexaoOnlineSistema(){
 }
 async function entrarOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  const senhaDigitada=document.getElementById("onlineSenhaSistema")?.value || "";
+  const senhaDigitada=valorCentralOnlineTelaSistema("onlineSenhaSistema") || "";
   const identidade=identidadeOnlineAtualSistema();
-  const emailObrigatorio=identidade.email || "";
-  const campoEmail=document.getElementById("onlineEmailSistema");
-  if(emailObrigatorio && campoEmail) campoEmail.value=emailObrigatorio;
+  const emailObrigatorio=identidade.email || emailUsuarioLogadoAtualSistema();
+  if(emailObrigatorio) aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailObrigatorio);
   salvarConfigOnlineRapidoSistema();
   const db=clienteSupabaseSistema();
-  const email=emailObrigatorio || (document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
+  const email=emailObrigatorio || emailNormalizadoSistema(valorCentralOnlineTelaSistema("onlineEmailSistema"));
   const senha=senhaDigitada;
   if(!db){if(msg) msg.innerText="Preencha URL e chave pública do Supabase antes de entrar.";return;}
   if(!email || !senha){if(msg) msg.innerText="Informe e-mail e senha do acesso online.";return;}
   if(msg) msg.innerText="Entrando no acesso online...";
   const {error}=await db.auth.signInWithPassword({email,password:senha});
-  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
+  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
   const liberado=await carregarPlanoClinicaOnlineSistema(false);
   if(msg) msg.innerText=liberado ? "Acesso online conectado. Agora você pode testar ou sincronizar os dados." : "Acesso online conectado, mas o plano precisa ser regularizado antes de usar o sistema.";
@@ -13290,6 +13291,15 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
       return false;
     }
+    const emailSessao=emailNormalizadoSistema(sessao.user && sessao.user.email || "");
+    const emailLocal=emailUsuarioLogadoAtualSistema();
+    if(emailSessao && emailLocal && emailSessao!==emailLocal){
+      await db.auth.signOut();
+      limparClinicaOnlineLocalSistema();
+      aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
+      atualizarPainelPlanoComercialSistema({mensagem:`Sessao online de ${emailSessao} desconectada. Entre online com ${emailLocal}.`});
+      return false;
+    }
     const perfilResp=await consultaOnlineComTempoSistema(
       db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle(),
       "Consulta do perfil da clínica",
@@ -13314,8 +13324,8 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     onlineAtual.email=emailNormalizadoSistema(sessao.user.email || onlineAtual.email || "");
     salvarConfigOnlineBaseSistema(onlineAtual);
     salvarConfigOnlineEscopoSistema(onlineAtual);
-    const campoClinic=document.getElementById("onlineClinicId");
-    if(campoClinic) campoClinic.value=perfil.clinic_id;
+    aplicarValorCentralOnlineTelaSistema("onlineClinicId",perfil.clinic_id);
+    aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",onlineAtual.email || emailUsuarioLogadoAtualSistema());
 
     const clinicaResp=await consultaOnlineComTempoSistema(
       db.from("clinics").select("name").eq("id",perfil.clinic_id).maybeSingle(),
@@ -13853,10 +13863,10 @@ async function diagnosticarConexaoOnlineSistema(){
   try{
     salvarConfigOnlineRapidoSistema();
     const online=configOnlineSistema();
-    const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
-    const senha=document.getElementById("onlineSenhaSistema")?.value || "";
-    if(document.getElementById("onlineSupabaseUrl")) document.getElementById("onlineSupabaseUrl").value=online.supabaseUrl || "";
-    if(document.getElementById("onlineSupabaseAnonKey")) document.getElementById("onlineSupabaseAnonKey").value=online.supabaseAnonKey || "";
+    const email=emailUsuarioLogadoAtualSistema() || emailNormalizadoSistema(valorCentralOnlineTelaSistema("onlineEmailSistema"));
+    const senha=valorCentralOnlineTelaSistema("onlineSenhaSistema") || "";
+    aplicarValorCentralOnlineTelaSistema("onlineSupabaseUrl",online.supabaseUrl || "");
+    aplicarValorCentralOnlineTelaSistema("onlineSupabaseAnonKey",online.supabaseAnonKey || "");
     if(status) status.innerText="Rodando diagnóstico online...";
 
     marcar(!!online.ativo,"Modo online ativado",online.ativo ? "" : "marque a caixa Ativar modo online");
@@ -15945,7 +15955,7 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-05-online-switch-clear-v11";
+const versaoAppInstalavelSistema = "2026-07-05-clinic-scoped-online-v12";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
 

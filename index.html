@@ -3208,12 +3208,56 @@ function lerJsonLocalSistema(chave,padrao=null){
   }
 }
 function procurarClinicaPorEmailSistema(email){
+  const alvo=emailNormalizadoSistema(email);
+  if(!alvo) return "";
+  const visitados=new Set();
+  function varrer(valor,clinicIdPai=""){
+    if(!valor || typeof valor!=="object" || visitados.has(valor)) return "";
+    visitados.add(valor);
+    const emails=[
+      valor.email,
+      valor.login,
+      valor.emailAcesso,
+      valor.adminEmail,
+      valor.ownerEmail,
+      valor.responsavelEmail,
+      valor.usuarioEmail,
+      valor.userEmail
+    ].map(emailNormalizadoSistema);
+    const encontrouEmail=emails.includes(alvo);
+    const idDireto=String(valor.onlineClinicId || valor.clinicId || valor.clinic_id || valor.id_clinica || valor.clinica_id || "").trim();
+    const idParaFilhos=idDireto || clinicIdPai;
+    if(encontrouEmail && idParaFilhos) return idParaFilhos;
+    if(encontrouEmail && valor.id && /^[0-9a-f-]{20,}$/i.test(String(valor.id))) return String(valor.id).trim();
+    if(Array.isArray(valor)){
+      for(const item of valor){
+        const achado=varrer(item,idParaFilhos);
+        if(achado) return achado;
+      }
+      return "";
+    }
+    for(const item of Object.values(valor)){
+      const achado=varrer(item,idParaFilhos);
+      if(achado) return achado;
+    }
+    return "";
+  }
+  for(let i=0;i<localStorage.length;i++){
+    const chave=localStorage.key(i);
+    if(!chave || !chave.startsWith("gepV2")) continue;
+    const achado=varrer(lerJsonLocalSistema(chave,null));
+    if(achado) return achado;
+  }
   return "";
 }
 function corrigirClinicaUsuarioSessaoSistema(usuario){
   const u=usuario || null;
   if(!u || usuarioSuperadminSistema(u)) return u;
-  if(u.onlineClinicId) u.onlineClinicId=normalizarEscopoClinicaSistema(u.onlineClinicId);
+  const achado=procurarClinicaPorEmailSistema(u.email || u.login || u.userEmail || u.emailAcesso);
+  if(achado && normalizarEscopoClinicaSistema(u.onlineClinicId)!==normalizarEscopoClinicaSistema(achado)){
+    u.onlineClinicId=achado;
+    try{sessionStorage.setItem("gepV2_usuarioLogado",JSON.stringify(u));}catch(e){}
+  }
   return u;
 }
 const escopoAdminGeralSistema="admin-geral";
@@ -3318,6 +3362,9 @@ function definirUsuarioAtualSistema(usuario){
   if(usuarioSuperadminSistema(u)){
     ativarEscopoClinicaSistema(escopoAdminGeralSistema);
     u.onlineClinicId="";
+  }else if(!u.onlineClinicId){
+    const escopoUsuario=procurarClinicaPorEmailSistema(u.email || u.login || u.emailAcesso || u.userEmail);
+    if(escopoUsuario) u.onlineClinicId=escopoUsuario;
   }
   if(u.onlineClinicId) ativarEscopoClinicaSistema(u.onlineClinicId);
   u.perfil=perfilUsuarioSistema(u);
@@ -3332,9 +3379,8 @@ function atualizarUsuarioTopoSistema(){
   const pill=document.querySelector(".user-pill");
   const u=usuarioAtualSistema() || {nome:"Administrador",perfil:"Administrador"};
   if(pill){
-    const nomeExibido=u.email || u.nome || "Administrador";
-    const inicial=String(nomeExibido).trim().charAt(0).toUpperCase() || "A";
-    pill.innerHTML=`<div class="avatar">${escapeHtmlText(inicial)}</div> ${escapeHtmlText(nomeExibido)} · ${escapeHtmlText(perfilUsuarioSistema(u))}`;
+    const inicial=(u.nome || u.email || "A").trim().charAt(0).toUpperCase() || "A";
+    pill.innerHTML=`<div class="avatar">${escapeHtmlText(inicial)}</div> ${escapeHtmlText(u.nome || u.email || "Administrador")} · ${escapeHtmlText(perfilUsuarioSistema(u))}`;
   }
 }
 function usuarioTemAcessoTela(id){
@@ -3433,118 +3479,7 @@ function entrarRapido(){
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
   verificarPlanoComercialAoEntrarSistema();
 }
-function camposCentralOnlineTelaSistema(id){
-  try{return [...document.querySelectorAll(`[id="${id}"]`)]}catch(e){return []}
-}
-function valorCentralOnlineTelaSistema(id){
-  const campos=camposCentralOnlineTelaSistema(id);
-  const preenchido=campos.map(c=>String(c.value || "").trim()).reverse().find(Boolean);
-  return preenchido || "";
-}
-function aplicarValorCentralOnlineTelaSistema(id,valor){
-  camposCentralOnlineTelaSistema(id).forEach(c=>{c.value=valor || "";});
-}
-function aplicarMarcacaoCentralOnlineTelaSistema(id,valor){
-  camposCentralOnlineTelaSistema(id).forEach(c=>{c.checked=!!valor;});
-}
-function aplicarTextoCentralOnlineTelaSistema(texto){
-  camposCentralOnlineTelaSistema("onlineStatusSistema").forEach(c=>{c.innerText=texto || "";});
-}
-function emailUsuarioLogadoAtualSistema(){
-  const usuario=usuarioAtualSistema();
-  return emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
-}
-function getCurrentClinicId(){
-  const usuario=usuarioAtualSistema();
-  const clinicUsuario=normalizarEscopoClinicaSistema(usuario && (usuario.onlineClinicId || usuario.clinicId || usuario.clinic_id));
-  return clinicUsuario || normalizarEscopoClinicaSistema(escopoClinicaAtualSistema()) || emailUsuarioLogadoAtualSistema();
-}
-function getClinicScopedKey(base){
-  const clinicId=getCurrentClinicId() || "sem_clinica";
-  return `${base}_${clinicId}`;
-}
-function limparCamposCentralOnlineTelaSistema(emailAtual=""){
-  const email=emailNormalizadoSistema(emailAtual || "");
-  aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",email);
-  aplicarValorCentralOnlineTelaSistema("onlineClinicId","");
-  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
-  aplicarTextoCentralOnlineTelaSistema(email ? `Central Online pronta para ${email}. Entre online para carregar a clinica correta.` : "Central Online limpa. Entre com um usuario para carregar a clinica correta.");
-}
-function limparTelaConfiguracoesSessaoSistema(){
-  const tela=document.getElementById("configuracoes");
-  if(!tela) return;
-  tela.dataset.precisaRemontar="1";
-}
-function garantirTelaConfiguracoesMontadaSistema(){
-  const tela=document.getElementById("configuracoes");
-  if(!tela) return;
-  const temEstrutura=!!document.getElementById("configProfissionaisLista") && !!document.getElementById("painelPreparacaoOnline");
-  if(!temEstrutura){
-    try{
-      montarTelaConfig();
-    }catch(e){
-      console.warn("Nao foi possivel remontar Configuracoes:",e);
-    }
-  }
-  try{delete tela.dataset.precisaRemontar;}catch(e){}
-}
-function limparMemoriaSessaoSistema(){
-  try{
-    if(window.__syncAutoSistema){
-      Object.values(window.__syncAutoSistema).forEach(t=>{try{clearTimeout(t)}catch(e){}});
-    }
-  }catch(e){}
-  [
-    "__clienteSupabaseSistema",
-    "__clienteSupabaseChave",
-    "__clinicScopeSistema",
-    "__loginEmailPendenteSistema",
-    "__syncAutoSistema",
-    "__planoComercialBloqueadoSistema",
-    "__pacienteCentralConfirmado",
-    "__buscaProntuarioBaixandoOnline",
-    "__prontuarioVisualAnterior",
-    "__prontuarioNomeEditando",
-    "currentUser",
-    "currentClinicId",
-    "currentOnlineEmail",
-    "onlineEmail",
-    "supabaseEmail",
-    "clinicEmail",
-    "centralOnline",
-    "onlinePassword"
-  ].forEach(nome=>{try{delete window[nome];}catch(e){window[nome]=null;}});
-}
-function limparTokensSupabaseSessaoSistema(){
-  try{
-    Object.keys(localStorage).forEach(chave=>{
-      if(/^sb-/i.test(chave) && /auth-token|session/i.test(chave)) localStorage.removeItem(chave);
-    });
-  }catch(e){}
-}
-function resetarSessaoAplicativoSistema(emailAtual=""){
-  limparMemoriaSessaoSistema();
-  try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
-  try{sessionStorage.clear();}catch(e){}
-  limparEscopoClinicaSistema();
-  window.usuarioLogadoSistema=null;
-  limparCamposCentralOnlineTelaSistema(emailAtual);
-  limparTelaConfiguracoesSessaoSistema();
-  removerBloqueioPlanoComercialSistema();
-}
-function reconstruirSessaoAposLoginSistema(emailAtual=""){
-  limparTelaConfiguracoesSessaoSistema();
-  limparCamposCentralOnlineTelaSistema(emailAtual);
-  try{renderConfig();}catch(e){}
-  setTimeout(()=>{try{preencherConfigOnlineSistema();garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}},80);
-}
-async function sairSistema(){
-  try{const db=clienteSupabaseSistema();if(db&&db.auth) await db.auth.signOut();}catch(e){}
-  limparTokensSupabaseSessaoSistema();
-  resetarSessaoAplicativoSistema("");
-  app.classList.remove("active");
-  loginPage.style.display="block";
-}
+function sairSistema(){removerBloqueioPlanoComercialSistema();sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
   prontuarioAbaAtual = aba || "resumo";
@@ -5130,7 +5065,7 @@ function configSistema(){
   try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
   try{conf=JSON.parse(localStorage.getItem(chaveLocalSistema("config")) || "{}") || {}}catch(e){conf={}}
   if(chaveLocalSistema("config")!=="gepV2_config"){
-    conf.online={...(conf.online || {})};
+    conf.online={...(base.online || {}),...(conf.online || {})};
   }
   if(!Array.isArray(conf.usuarios) || !conf.usuarios.some(u=>u && String(u.email || "").trim() && (u.senhaHash || u.senha))){
     conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
@@ -5143,9 +5078,7 @@ function configSistema(){
 
 function montarTelaConfig(){
   const tela = document.getElementById("configuracoes");
-  if(!tela) return;
-  const completa=document.getElementById("configProfissionaisLista") && document.getElementById("configUsuariosLista") && document.getElementById("painelPreparacaoOnline");
-  if(completa) return;
+  if(!tela || document.getElementById("configProfissionaisLista")) return;
   tela.innerHTML = `
     <div class="box">
       <h2>Configuracoes da clinica</h2>
@@ -9782,7 +9715,7 @@ body > #resultadoPacientes{
 
 function obterFinanceiroOrganizado(){
   const novo = get("financeiroPro");
-  if(novo.length) return financeiroExpandidoSistema(novo);
+  if(novo.length) return novo;
   return get("financeiro").map(x=>({
     tipo:x.tipo || "Entrada",
     valor:Number(x.valor || 0),
@@ -9796,20 +9729,20 @@ function obterFinanceiroOrganizado(){
 }
 
 function resumoFinanceiroSistema(){
-  const resumo = {entradas:0, saidas:0, taxas:0, liquido:0};
-  obterFinanceiroOrganizado().forEach(x=>{
-    const valor = Number(x.valor || 0);
-    const liquido = Number(x.liquido ?? valor);
-    const taxa = Number(x.taxaValor || 0);
-    const tipo = String(x.tipo || "").toLowerCase();
+  const resumo = {entradas:0, saidas:0, taxas:0, liquido:0, aberto:0, futuro:0};
+  parcelasFinanceiroSistema(obterFinanceiroOrganizado()).forEach(p=>{
+    const tipo = String(p.tipo || "").toLowerCase();
+    if(!p.realizado){
+      resumo.aberto += Number(p.valor || 0);
+      if(String(p.data || "") > hojeFinanceiro()) resumo.futuro += Number(p.valor || 0);
+      return;
+    }
     if(tipo === "saída" || tipo === "saida"){
-      if(statusPagoFinanceiroSistema(x)) resumo.saidas += valor;
+      resumo.saidas += Number(p.valor || 0);
     }else{
-      if(statusPagoFinanceiroSistema(x)){
-        resumo.entradas += valor;
-        resumo.taxas += taxa;
-        resumo.liquido += liquido;
-      }
+      resumo.entradas += Number(p.valor || 0);
+      resumo.taxas += Number(p.taxaValor || 0);
+      resumo.liquido += Number(p.liquido || 0);
     }
   });
   resumo.saldo = resumo.entradas - resumo.saidas - resumo.taxas;
@@ -9818,20 +9751,11 @@ function resumoFinanceiroSistema(){
 
 function resumoFinanceiroMesAtual(){
   const hoje = new Date().toISOString().slice(0,7);
-  return obterFinanceiroOrganizado()
-    .filter(x=>String(x.data || "").slice(0,7) === hoje)
-    .reduce((total,x)=>{const tipo=String(x.tipo||"").toLowerCase(); return total + (tipo === "saída" || tipo === "saida" ? 0 : Number(x.liquido ?? x.valor ?? 0));},0);
+  return parcelasFinanceiroSistema(obterFinanceiroOrganizado())
+    .filter(p=>p.realizado && String(p.data || "").slice(0,7) === hoje)
+    .reduce((total,p)=>{const tipo=String(p.tipo||"").toLowerCase(); return total + (tipo === "saída" || tipo === "saida" ? 0 : Number(p.liquido ?? p.valor ?? 0));},0);
 }
 
-resumoFinanceiroMesAtual = function(){
-  const hoje = new Date().toISOString().slice(0,7);
-  return obterFinanceiroOrganizado()
-    .filter(x=>String(x.data || x.vencimento || "").slice(0,7) === hoje)
-    .reduce((total,x)=>{
-      const tipo=String(x.tipo||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-      return total + ((tipo==="saida" || !statusPagoFinanceiroSistema(x)) ? 0 : Number(x.liquido ?? x.valor ?? 0));
-    },0);
-};
 function itemResumoAgendaDash(x){
   const data = typeof formatarDataAgenda === "function" ? formatarDataAgenda(x.data) : (x.data || "");
   const paciente = escapeHtmlText(x.paciente || "Paciente não informado");
@@ -10058,131 +9982,59 @@ function mesAtualFinanceiro(data){
   return d.getMonth() === h.getMonth() && d.getFullYear() === h.getFullYear();
 }
 function numeroFinanceiroSistema(valor){
-  const n=Number(valor || 0);
-  return Number.isFinite(n) ? n : 0;
+  if(typeof valor === "number") return Number.isFinite(valor) ? valor : 0;
+  let texto = String(valor ?? "").replace(/[^\d,.-]/g,"").trim();
+  if(!texto) return 0;
+  if(texto.includes(",")) texto = texto.replace(/\./g,"").replace(",",".");
+  const numero = Number(texto);
+  return Number.isFinite(numero) ? numero : 0;
 }
 function arredondarFinanceiroSistema(valor){
-  return Math.round(numeroFinanceiroSistema(valor)*100)/100;
+  return Math.round((Number(valor || 0) + Number.EPSILON) * 100) / 100;
 }
-function adicionarMesesFinanceiroSistema(data,meses){
-  const base=data ? new Date(data+"T00:00:00") : new Date();
+function adicionarMesesFinanceiroSistema(data, meses){
+  const base = data ? new Date(String(data).slice(0,10)+"T00:00:00") : new Date();
   if(Number.isNaN(base.getTime())) return hojeFinanceiro();
-  const dia=base.getDate();
-  const alvo=new Date(base.getFullYear(),base.getMonth()+Number(meses || 0),1);
-  const ultimo=new Date(alvo.getFullYear(),alvo.getMonth()+1,0).getDate();
-  alvo.setDate(Math.min(dia,ultimo));
-  return alvo.toISOString().slice(0,10);
+  const dia = base.getDate();
+  base.setMonth(base.getMonth() + Number(meses || 0), 1);
+  const ultimoDia = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  base.setDate(Math.min(dia, ultimoDia));
+  return base.toISOString().slice(0,10);
 }
-function chaveMesFinanceiroSistema(data){
-  const d=data ? new Date(data+"T00:00:00") : new Date();
-  if(Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+function statusFinanceiroRealizadoSistema(item){
+  const status = String(item?.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+  return !["em aberto","aberto","pendente","vencido","nao pago","não pago"].includes(status);
 }
-function statusPagoFinanceiroSistema(item){
-  const s=String(item && item.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  return s==="pago" || s==="recebido" || s==="quitado";
+function statusCobrancaFinanceiroSistema(statusInformado, total, pago){
+  const valorTotal = numeroFinanceiroSistema(total);
+  const valorPago = numeroFinanceiroSistema(pago);
+  if(valorPago <= 0) return "Em aberto";
+  if(valorTotal > 0 && valorPago < valorTotal) return "Parcial";
+  return statusInformado === "Em aberto" ? "Pago" : (statusInformado || "Pago");
 }
-function pagamentoCartaoFinanceiroSistema(item){
-  const p=String(item && (item.pagamento || item.forma || item.pg) || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  return p.includes("credito") || p.includes("debito") || p.includes("cartao") || p.includes("parcelado");
+function parcelasLancamentoFinanceiroSistema(item){
+  const totalParcelas = Math.max(1, Math.floor(numeroFinanceiroSistema(item?.parcelas || 1)));
+  const valorTotal = numeroFinanceiroSistema(item?.valor || 0);
+  const taxaTotal = numeroFinanceiroSistema(item?.taxaValor || 0);
+  const tipo = String(item?.tipo || "entrada").toLowerCase();
+  const liquidoTotal = item?.liquido === undefined || item?.liquido === null
+    ? (tipo === "entrada" ? valorTotal - taxaTotal : valorTotal)
+    : numeroFinanceiroSistema(item.liquido);
+  const realizado = statusFinanceiroRealizadoSistema(item);
+  let valorAcumulado = 0, taxaAcumulada = 0, liquidoAcumulado = 0;
+  return Array.from({length:totalParcelas},(_,idx)=>{
+    const ultima = idx === totalParcelas - 1;
+    const valor = ultima ? arredondarFinanceiroSistema(valorTotal - valorAcumulado) : arredondarFinanceiroSistema(valorTotal / totalParcelas);
+    const taxaValor = ultima ? arredondarFinanceiroSistema(taxaTotal - taxaAcumulada) : arredondarFinanceiroSistema(taxaTotal / totalParcelas);
+    const liquido = ultima ? arredondarFinanceiroSistema(liquidoTotal - liquidoAcumulado) : arredondarFinanceiroSistema(liquidoTotal / totalParcelas);
+    valorAcumulado += valor;
+    taxaAcumulada += taxaValor;
+    liquidoAcumulado += liquido;
+    return {...item, data:adicionarMesesFinanceiroSistema(item?.data || hojeFinanceiro(),idx), parcelaNumero:idx+1, parcelasTotal:totalParcelas, valor, taxaValor, liquido, realizado};
+  });
 }
-function parteParcelaFinanceiroSistema(total,parcelas,numero){
-  total=arredondarFinanceiroSistema(total);
-  parcelas=Math.max(1,Number(parcelas || 1));
-  numero=Number(numero || 1);
-  const base=arredondarFinanceiroSistema(total/parcelas);
-  if(numero<parcelas) return base;
-  return arredondarFinanceiroSistema(total - (base*(parcelas-1)));
-}
-function criarParcelasFinanceiroSistema(base){
-  const totalParcelas=Math.max(1,Number(base.parcelasTotal || base.parcelas || 1));
-  const idBase=String(base.grupoParcelasId || base.id || Date.now());
-  const valorTotal=numeroFinanceiroSistema(base.valor);
-  const taxaTotal=numeroFinanceiroSistema(base.taxaValor);
-  const liquidoTotal=numeroFinanceiroSistema(base.liquido || (valorTotal-taxaTotal));
-  const saida=[];
-  for(let i=1;i<=totalParcelas;i++){
-    const dataParcela=adicionarMesesFinanceiroSistema(base.data || hojeFinanceiro(),i-1);
-    const valor=parteParcelaFinanceiroSistema(valorTotal,totalParcelas,i);
-    const taxaValor=parteParcelaFinanceiroSistema(taxaTotal,totalParcelas,i);
-    const liquido=parteParcelaFinanceiroSistema(liquidoTotal,totalParcelas,i);
-    saida.push({
-      ...base,
-      id:totalParcelas>1 ? `${idBase}-${i}` : idBase,
-      grupoParcelasId:idBase,
-      parcelaNumero:i,
-      parcelasTotal:totalParcelas,
-      parcelas:totalParcelas,
-      data:dataParcela,
-      vencimento:dataParcela,
-      competencia:chaveMesFinanceiroSistema(dataParcela),
-      valor,
-      taxaValor,
-      liquido,
-      descricao:totalParcelas>1 ? `${base.descricao || ""} - Parcela ${i}/${totalParcelas}`.trim() : (base.descricao || "")
-    });
-  }
-  return saida;
-}
-function parcelasDoLancamentoFinanceiroSistema(item){
-  if(!item) return [];
-  if(item.parcelaNumero || item.parcelasTotal) return [{
-    ...item,
-    valor:numeroFinanceiroSistema(item.valor),
-    taxaValor:numeroFinanceiroSistema(item.taxaValor),
-    liquido:numeroFinanceiroSistema(item.liquido || item.valor),
-    vencimento:item.vencimento || item.data || hojeFinanceiro(),
-    competencia:item.competencia || chaveMesFinanceiroSistema(item.data || item.vencimento)
-  }];
-  const totalParcelas=Math.max(1,Number(item.parcelas || 1));
-  if(totalParcelas<=1) return [{
-    ...item,
-    valor:numeroFinanceiroSistema(item.valor),
-    taxaValor:numeroFinanceiroSistema(item.taxaValor),
-    liquido:numeroFinanceiroSistema(item.liquido || item.valor),
-    parcelaNumero:1,
-    parcelasTotal:1,
-    vencimento:item.vencimento || item.data || hojeFinanceiro(),
-    competencia:item.competencia || chaveMesFinanceiroSistema(item.data || item.vencimento)
-  }];
-  return criarParcelasFinanceiroSistema({...item,__virtual:true});
-}
-function financeiroExpandidoSistema(lista){
-  return (Array.isArray(lista)?lista:[]).flatMap(parcelasDoLancamentoFinanceiroSistema);
-}
-function linhasGrupoFinanceiroSistema(lista,id){
-  const alvo=String(id || "");
-  return (Array.isArray(lista)?lista:[]).filter(x=>String(x.id)===alvo || String(x.grupoParcelasId || "")===alvo);
-}
-function resumoGrupoFinanceiroSistema(lista,id){
-  const linhas=linhasGrupoFinanceiroSistema(lista,id);
-  if(!linhas.length) return null;
-  const primeira=[...linhas].sort((a,b)=>String(a.data||"").localeCompare(String(b.data||"")))[0];
-  const totalParcelas=Math.max(...linhas.map(x=>Number(x.parcelasTotal || x.parcelas || 1)),linhas.length);
-  return {
-    ...primeira,
-    id:primeira.grupoParcelasId || primeira.id,
-    descricao:String(primeira.descricao || "").replace(/\s*-\s*Parcela\s+\d+\/\d+\s*$/i,""),
-    valor:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.valor),0)),
-    taxaValor:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.taxaValor),0)),
-    liquido:arredondarFinanceiroSistema(linhas.reduce((s,x)=>s+numeroFinanceiroSistema(x.liquido || x.valor),0)),
-    parcelas:totalParcelas,
-    parcelasTotal:totalParcelas,
-    status:linhas.every(statusPagoFinanceiroSistema) ? "Pago" : "Em aberto"
-  };
-}
-function receitaRealFinanceiroSistema(item){
-  return item && item.tipo==="entrada" && statusPagoFinanceiroSistema(item) ? numeroFinanceiroSistema(item.valor) : 0;
-}
-function saidaRealFinanceiroSistema(item){
-  return item && item.tipo==="saida" && statusPagoFinanceiroSistema(item) ? numeroFinanceiroSistema(item.valor) : 0;
-}
-function resumoFaturasFinanceiroSistema(lista){
-  const expandida=financeiroExpandidoSistema(lista).filter(x=>x.tipo==="entrada" && pagamentoCartaoFinanceiroSistema(x));
-  const mesAtual=chaveMesFinanceiroSistema(hojeFinanceiro());
-  const proximoMes=chaveMesFinanceiroSistema(adicionarMesesFinanceiroSistema(hojeFinanceiro(),1));
-  const totalMes=mes=>expandida.filter(x=>chaveMesFinanceiroSistema(x.data || x.vencimento)===mes).reduce((s,x)=>s+numeroFinanceiroSistema(x.valor),0);
-  return {atual:totalMes(mesAtual),proxima:totalMes(proximoMes)};
+function parcelasFinanceiroSistema(lista){
+  return (Array.isArray(lista) ? lista : []).flatMap(parcelasLancamentoFinanceiroSistema);
 }
 function dadosTaxaFinanceiroPro(){
   const valor = Number(document.getElementById("finValorLanc")?.value || 0);
@@ -10258,14 +10110,11 @@ function salvarLancamentoFinanceiroPro(){
   const taxaValor = dadosTaxa.taxaValor;
   const liquido = dadosTaxa.liquido;
 
-  let lista = get("financeiroPro");
+  const lista = get("financeiroPro");
   const editId = document.getElementById("finEditId")?.value || "";
-  const existente = editId ? (lista.find(x=>String(x.id)===String(editId)) || resumoGrupoFinanceiroSistema(lista,editId)) : null;
-  const grupoEdicao = existente ? String(existente.grupoParcelasId || existente.id || editId) : "";
-  const idBase = existente ? grupoEdicao : String(Date.now());
+  const existente = editId ? lista.find(x=>String(x.id)===String(editId)) : null;
   const item = {
-    id: idBase,
-    grupoParcelasId: idBase,
+    id: existente ? existente.id : Date.now(),
     data: document.getElementById("finDataLanc")?.value || hojeFinanceiro(),
     tipo,
     paciente: document.getElementById("finPaciente")?.value || "",
@@ -10273,8 +10122,7 @@ function salvarLancamentoFinanceiroPro(){
     descricao: document.getElementById("finDescLanc")?.value || "",
     categoria: document.getElementById("finCategoriaLanc")?.value || "",
     pagamento: document.getElementById("finFormaLanc")?.value || "",
-    parcelas: Math.max(1,Number(document.getElementById("finParcelasLanc")?.value || 1)),
-    parcelasTotal: Math.max(1,Number(document.getElementById("finParcelasLanc")?.value || 1)),
+    parcelas: Number(document.getElementById("finParcelasLanc")?.value || 1),
     origem: existente ? origemFinanceiroPro(existente) : "Manual",
     taxaPerc,
     taxaValor,
@@ -10282,12 +10130,11 @@ function salvarLancamentoFinanceiroPro(){
     liquido,
     status: document.getElementById("finStatusLanc")?.value || "Pago"
   };
-  const parcelasGeradas = criarParcelasFinanceiroSistema(item);
   if(existente){
-    lista = lista.filter(x=>String(x.id)!==String(editId) && String(x.grupoParcelasId || x.id)!==grupoEdicao);
-    lista.push(...parcelasGeradas);
+    const idx = lista.findIndex(x=>String(x.id)===String(editId));
+    if(idx >= 0) lista[idx] = {...existente,...item};
   }else{
-    lista.push(...parcelasGeradas);
+    lista.push(item);
   }
   set("financeiroPro", lista);
 
@@ -10296,11 +10143,10 @@ function salvarLancamentoFinanceiroPro(){
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
 }
 function editarLancamentoFinanceiroPro(id){
-  const listaFinanceiro=get("financeiroPro");
-  const item = listaFinanceiro.find(x=>String(x.id)===String(id)) || resumoGrupoFinanceiroSistema(listaFinanceiro,id);
+  const item = get("financeiroPro").find(x=>String(x.id)===String(id));
   if(!item){alert("Lançamento não encontrado.");return;}
   const editId = document.getElementById("finEditId");
-  if(editId) editId.value = item.grupoParcelasId || item.id;
+  if(editId) editId.value = item.id;
   selecionarValorFinanceiroPro("finTipoLanc", item.tipo || "entrada");
   const data = document.getElementById("finDataLanc");
   if(data) data.value = item.data || hojeFinanceiro();
@@ -10335,8 +10181,7 @@ function cancelarEdicaoFinanceiroPro(){
 function removerLancamentoFinanceiroPro(id){
   if(!confirm("Remover lançamento financeiro?")) return;
   try{excluirOnlinePorLocalIdSistema("financial_entries",id);}catch(e){}
-  const alvo=String(id);
-  set("financeiroPro", get("financeiroPro").filter(x => String(x.id) !== alvo && String(x.grupoParcelasId || x.id) !== alvo));
+  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id)));
   renderFinanceiroPro();
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
 }
@@ -10344,8 +10189,7 @@ function renderFinanceiroPro(){
   const data = document.getElementById("finDataLanc");
   if(data && !data.value) data.value = hojeFinanceiro();
 
-  const listaCompleta = financeiroExpandidoSistema(get("financeiroPro"));
-  let lista = listaCompleta;
+  let lista = get("financeiroPro");
   const ini = document.getElementById("finFiltroInicio")?.value;
   const fim = document.getElementById("finFiltroFim")?.value;
 
@@ -10353,12 +10197,11 @@ function renderFinanceiroPro(){
   if(fim) lista = lista.filter(x => x.data <= fim);
 
   let entradas = 0, saidas = 0, taxas = 0;
-  listaCompleta.filter(x => mesAtualFinanceiro(x.data || x.vencimento)).forEach(x=>{
-    entradas += receitaRealFinanceiroSistema(x);
-    saidas += saidaRealFinanceiroSistema(x);
-    if(statusPagoFinanceiroSistema(x)) taxas += Number(x.taxaValor || 0);
+  parcelasFinanceiroSistema(get("financeiroPro")).filter(x => x.realizado && mesAtualFinanceiro(x.data)).forEach(x=>{
+    if(x.tipo === "entrada") entradas += Number(x.valor || 0);
+    if(x.tipo === "saida") saidas += Number(x.valor || 0);
+    if(x.tipo === "entrada") taxas += Number(x.taxaValor || 0);
   });
-  const faturas=resumoFaturasFinanceiroSistema(get("financeiroPro"));
 
   const setTxt = (id, valor) => {
     const el = document.getElementById(id);
@@ -10369,19 +10212,14 @@ function renderFinanceiroPro(){
   setTxt("finResumoSaidas", moedaFinanceiro(saidas));
   setTxt("finResumoTaxas", moedaFinanceiro(taxas));
   setTxt("finResumoLucro", moedaFinanceiro(entradas - saidas - taxas));
-  const statusForm=document.getElementById("finEdicaoStatus");
-  const editando=!!document.getElementById("finEditId")?.value;
-  if(statusForm && !editando) statusForm.innerText=`Fatura atual no cartao: ${moedaFinanceiro(faturas.atual)} | Proxima fatura: ${moedaFinanceiro(faturas.proxima)}. Para corrigir um lancamento, clique em Editar.`;
 
   const tb = document.getElementById("finTabelaPro");
   if(!tb) return;
 
   tb.innerHTML = lista.slice().reverse().map(x=>{
     const tipoTag = x.tipo === "entrada" ? "tag-ok" : "tag-ruim";
-    const statusTag = statusPagoFinanceiroSistema(x) ? "tag-ok" : "tag-alerta";
+    const statusTag = statusFinanceiroRealizadoSistema(x) ? "tag-ok" : "tag-alerta";
     const origem = origemFinanceiroPro(x);
-    const acaoId = x.grupoParcelasId || x.parentId || x.id;
-    const rotuloParcela = Number(x.parcelasTotal || x.parcelas || 1)>1 ? `Parcela ${x.parcelaNumero || 1}/${x.parcelasTotal || x.parcelas}` : "";
     return `
       <tr>
         <td>${x.data || ""}</td>
@@ -10390,12 +10228,12 @@ function renderFinanceiroPro(){
         <td>${x.paciente || "Clínica / despesa geral"}</td>
         <td>${x.pagador || x.paciente || "Clínica / despesa geral"}</td>
         <td><b>${x.descricao || ""}</b><br><small>${x.categoria || ""}</small></td>
-        <td>${x.pagamento || ""}${Number(x.parcelasTotal || x.parcelas || 1) > 1 ? " / " + (x.parcelasTotal || x.parcelas) + "x" : ""}<br><small>${rotuloParcela}</small></td>
+        <td>${x.pagamento || ""}${x.parcelas > 1 ? " / " + x.parcelas + "x" : ""}</td>
         <td><span class="${statusTag}">${x.status || ""}</span></td>
         <td>${moedaFinanceiro(x.valor)}</td>
         <td>${Number(x.taxaPerc || 0).toLocaleString("pt-BR",{maximumFractionDigits:2})}%<br><small>${moedaFinanceiro(x.taxaValor)}</small></td>
         <td>${moedaFinanceiro(x.liquido)}</td>
-        <td><button class="btn-mini" onclick="editarLancamentoFinanceiroPro('${acaoId}')">Editar</button> <button class="btn-mini" onclick="removerLancamentoFinanceiroPro('${acaoId}')">Remover</button></td>
+        <td><button class="btn-mini" onclick="editarLancamentoFinanceiroPro('${x.id}')">Editar</button> <button class="btn-mini" onclick="removerLancamentoFinanceiroPro('${x.id}')">Remover</button></td>
       </tr>`;
   }).join("") || "<tr><td colspan='12'>Nenhum lançamento financeiro registrado.</td></tr>";
 }
@@ -10450,7 +10288,7 @@ function salvarCobrancaProntuario(){
   const forma = document.getElementById("cobForma")?.value || "Pix";
   const parcelas = Number(document.getElementById("cobParcelas")?.value || 1);
   const taxaPerc = Number(document.getElementById("cobTaxa")?.value || 0);
-  const status = document.getElementById("cobStatus")?.value || "Pago";
+  const statusInformado = document.getElementById("cobStatus")?.value || "Pago";
   const vencimento = document.getElementById("cobVencimento")?.value || "";
   const obs = document.getElementById("cobObs")?.value || "";
 
@@ -10459,8 +10297,9 @@ function salvarCobrancaProntuario(){
     return;
   }
 
-  const taxaValor = valorPago * (taxaPerc / 100);
-  const liquido = valorPago - taxaValor;
+  const taxaValor = arredondarFinanceiroSistema(valorPago * (taxaPerc / 100));
+  const liquido = arredondarFinanceiroSistema(valorPago - taxaValor);
+  const status = statusCobrancaFinanceiroSistema(statusInformado, valorTotal || valorPago, valorPago);
 
   const item = {
     id: Date.now(),
@@ -10484,15 +10323,10 @@ function salvarCobrancaProntuario(){
   cobrancas.push(item);
   set("cobrancasProntuario", cobrancas);
 
-  if((valorPago > 0) || (valorTotal > 0 && status !== "Pago")){
+  if(valorPago > 0){
     const fin = get("financeiroPro");
-    const valorFinanceiro = valorPago > 0 ? valorPago : (valorTotal || valorPago);
-    const taxaFinanceiro = valorPago > 0 ? taxaValor : 0;
-    const liquidoFinanceiro = valorPago > 0 ? liquido : valorFinanceiro;
-    const statusFinanceiro = valorPago > 0 && status === "Pago" ? "Pago" : status;
-    const baseFinanceira = {
+    fin.push({
       id: item.id,
-      grupoParcelasId: String(item.id),
       data: item.data,
       tipo: "entrada",
       paciente,
@@ -10502,14 +10336,12 @@ function salvarCobrancaProntuario(){
       origem: "Prontuário",
       pagamento: forma,
       parcelas,
-      parcelasTotal: parcelas,
       taxaPerc,
-      taxaValor: taxaFinanceiro,
-      valor: valorFinanceiro,
-      liquido: liquidoFinanceiro,
-      status: statusFinanceiro
-    };
-    fin.push(...criarParcelasFinanceiroSistema(baseFinanceira));
+      taxaValor,
+      valor: valorPago,
+      liquido,
+      status
+    });
     set("financeiroPro", fin);
   }
 
@@ -10532,8 +10364,7 @@ function removerCobrancaProntuario(id){
   try{excluirOnlinePorLocalIdSistema("procedure_charges",id);}catch(e){}
   try{excluirOnlinePorLocalIdSistema("financial_entries",id);}catch(e){}
   set("cobrancasProntuario", get("cobrancasProntuario").filter(x => Number(x.id) !== Number(id)));
-  const alvo=String(id);
-  set("financeiroPro", get("financeiroPro").filter(x => String(x.id) !== alvo && String(x.grupoParcelasId || x.id) !== alvo));
+  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id)));
   renderCobrancasProntuario();
   try{ renderFinanceiroPro(); }catch(e){}
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
@@ -12718,7 +12549,16 @@ function salvarConfigSistemaSeguro(conf){
   if(chave!=="gepV2_config"){
     let base={};
     try{base=JSON.parse(localStorage.getItem("gepV2_config") || "{}") || {}}catch(e){base={}}
-    base.online={};
+    const onlineBase={...(base.online || {})};
+    if(final.online){
+      if(final.online.supabaseUrl) onlineBase.supabaseUrl=final.online.supabaseUrl;
+      if(final.online.supabaseAnonKey) onlineBase.supabaseAnonKey=final.online.supabaseAnonKey;
+      if(typeof final.online.ativo==="boolean") onlineBase.ativo=final.online.ativo;
+    }
+    delete onlineBase.clinicId;
+    delete onlineBase.email;
+    delete onlineBase.senha;
+    base.online=onlineBase;
     localStorage.setItem("gepV2_config",JSON.stringify(base));
   }
   salvarBackupAcessoSistema(final.usuarios);
@@ -12797,17 +12637,11 @@ async function autenticarUsuarioConfigLocal(email,senha){
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
   if(!db) return null;
-  try{await db.auth.signOut();}catch(e){}
   const login=await db.auth.signInWithPassword({email,password:senha});
   if(login.error) return null;
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
   if(!sessao?.user?.id) return null;
-  const emailSessao=emailNormalizadoSistema(sessao.user.email || login.data?.user?.email || "");
-  if(emailSessao!==emailNormalizadoSistema(email)){
-    try{await db.auth.signOut();}catch(e){}
-    return null;
-  }
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
   if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
   const perfil=perfilResp.data;
@@ -12821,11 +12655,11 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const perfilNormalizado=perfilUsuarioSistema({perfil:perfil.role || "Administrador"});
   const conf=configSistemaSeguro();
   conf.clinica=nomeClinica;
-  const onlineAtual=configOnlineSistema();
-  onlineAtual.ativo=true;
-  onlineAtual.clinicId=perfil.clinic_id || onlineAtual.clinicId || "";
+  conf.online=conf.online || {};
+  conf.online.ativo=true;
+  conf.online.clinicId=perfil.clinic_id || conf.online.clinicId || "";
   const usuario={
-    nome:email,
+    nome:perfil.full_name || sessao.user.user_metadata?.full_name || email,
     email,
     role:perfil.role || perfilNormalizado,
     perfilOriginal:perfil.role || perfilNormalizado,
@@ -12840,9 +12674,6 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const existentes=Array.isArray(conf.usuarios)?conf.usuarios.filter(u=>String(u.email||"").trim().toLowerCase()!==email):[];
   conf.usuarios=[usuario,...existentes.filter(usuarioMesmoEscopoAtualSistema)];
   salvarConfigSistemaSeguro(conf);
-  definirUsuarioAtualSistema(usuario);
-  salvarConfigOnlineBaseSistema(onlineAtual);
-  salvarConfigOnlineEscopoSistema(onlineAtual);
   return usuario;
 }
 async function criarPrimeiroAdministradorLocal(email,senha){
@@ -12850,7 +12681,7 @@ async function criarPrimeiroAdministradorLocal(email,senha){
   const emailAdmin=String(email || "").trim().toLowerCase();
   const usuariosAtuais=Array.isArray(conf.usuarios)?conf.usuarios:[];
   const usuario={
-    nome:emailAdmin,
+    nome:"Administrador",
     email:emailAdmin,
     perfil:"Administrador",
     acessos:todosAcessosSistema(),
@@ -12889,14 +12720,6 @@ window.entrarSistema = async function(){
     mensagemLoginProfissional("Informe e-mail e senha para acessar.");
     return;
   }
-  try{
-    const dbAnterior=clienteSupabaseSistema();
-    if(dbAnterior && dbAnterior.auth) await dbAnterior.auth.signOut();
-  }catch(e){}
-  limparTokensSupabaseSessaoSistema();
-  resetarSessaoAplicativoSistema(email);
-  window.__loginEmailPendenteSistema=email;
-  window.usuarioLogadoSistema={nome:email,email,perfil:"Administrador",acessos:todosAcessosSistema(),ativo:true};
   let usuario=null;
   const conf=configSistemaSeguro();
   try{
@@ -12911,15 +12734,11 @@ window.entrarSistema = async function(){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
   if(!usuario){
-    delete window.__loginEmailPendenteSistema;
-    window.usuarioLogadoSistema=null;
     mensagemLoginProfissional("E-mail ou senha inválidos.");
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
   definirUsuarioAtualSistema({...usuario,perfil:perfilUsuarioSistema(usuario),acessos:usuario.acessos || acessosPerfilSistema(usuario.perfil)});
-  delete window.__loginEmailPendenteSistema;
-  limparCamposCentralOnlineTelaSistema(usuario.email || email);
   const loginPage=document.getElementById("loginPage");
   const app=document.getElementById("app");
   const clinicaLogada=document.getElementById("clinicaLogada");
@@ -12928,8 +12747,7 @@ window.entrarSistema = async function(){
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
   atualizarTudo();
-  try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
-  reconstruirSessaoAposLoginSistema(usuario.email || email);
+  try{garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13069,53 +12887,17 @@ function usuarioSessaoAtualSistema(){
   try{return JSON.parse(sessionStorage.getItem("gepV2_usuarioLogado") || "null")}catch(e){return null}
 }
 
-function identidadeOnlineAtualSistema(){
-  const emailPendente=emailNormalizadoSistema(window.__loginEmailPendenteSistema || "");
-  const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema() || usuarioAtualSistema());
-  const email=emailNormalizadoSistema(sessao && (sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail));
-  const clinicId=normalizarEscopoClinicaSistema(sessao && sessao.onlineClinicId);
-  const emailAtual=emailPendente || email;
-  const clinicAtual=emailPendente ? "" : (clinicId || normalizarEscopoClinicaSistema(getCurrentClinicId()));
-  const chave=getClinicScopedKey("gepV2_online_config");
-  return {email:emailAtual,clinicId:clinicAtual,chave};
-}
-function lerConfigOnlineEscopoSistema(){
-  const identidade=identidadeOnlineAtualSistema();
-  try{
-    const dados=JSON.parse(localStorage.getItem(identidade.chave) || "{}") || {};
-    const emailSalvo=emailNormalizadoSistema(dados.email || "");
-    const clinicSalvo=normalizarEscopoClinicaSistema(dados.clinicId || dados.clinic_id || "");
-    if(identidade.email && emailSalvo && emailSalvo!==identidade.email) return {};
-    if(identidade.clinicId && clinicSalvo && clinicSalvo!==identidade.clinicId) return {};
-    return dados;
-  }catch(e){return {}}
-}
-function salvarConfigOnlineEscopoSistema(online){
-  const identidade=identidadeOnlineAtualSistema();
-  const dados=ajustarOnlineAoUsuarioAtualSistema(online || {});
-  dados.email=identidade.email || dados.email || "";
-  dados.clinicId=identidade.clinicId || dados.clinicId || "";
-  localStorage.setItem(identidade.chave,JSON.stringify(dados));
-}
-function salvarConfigOnlineBaseSistema(online){
-  const conf=configSistemaSeguro();
-  conf.online={};
-  salvarConfigSistemaSeguro(conf);
-}
 function ajustarOnlineAoUsuarioAtualSistema(online){
   const ajustado={...(online || {})};
-  const identidade=identidadeOnlineAtualSistema();
-  if(identidade.email && emailNormalizadoSistema(ajustado.email) && emailNormalizadoSistema(ajustado.email)!==identidade.email){
-    ajustado.clinicId="";
-    ajustado.senha="";
-    delete ajustado.token;
-  }
-  if(identidade.email) ajustado.email=identidade.email;
-  if(identidade.clinicId) ajustado.clinicId=identidade.clinicId;
-  else if(identidade.email){
-    const clinicIdInformado=normalizarEscopoClinicaSistema(ajustado.clinicId);
-    const escopoAtual=normalizarEscopoClinicaSistema(escopoClinicaAtualSistema());
-    if(clinicIdInformado && escopoAtual && clinicIdInformado!==escopoAtual) ajustado.clinicId="";
+  const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
+  if(sessao && !usuarioSuperadminSistema(sessao)){
+    const emailAnterior=emailNormalizadoSistema(ajustado.email || "");
+    const cid=String(sessao.onlineClinicId || "").trim();
+    const email=emailNormalizadoSistema(sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail);
+    if(cid) ajustado.clinicId=cid;
+    else if(email && emailAnterior && emailAnterior!==email) ajustado.clinicId="";
+    if(email) ajustado.email=email;
+    if(email && emailAnterior && emailAnterior!==email) ajustado.senha="";
   }
   ajustado.supabaseUrl=limparUrlSupabaseSistema(ajustado.supabaseUrl || "");
   if(ajustado.supabaseAnonKey) ajustado.supabaseAnonKey=limparChaveSupabaseSistema(ajustado.supabaseAnonKey);
@@ -13123,11 +12905,13 @@ function ajustarOnlineAoUsuarioAtualSistema(online){
 }
 
 function configOnlineSistema(){
-  const online={...lerConfigOnlineEscopoSistema()};
+  const conf=configSistemaSeguro();
+  const online={...(conf.online || {})};
   const ajustado=ajustarOnlineAoUsuarioAtualSistema(online);
   if(online.supabaseUrl && ajustado.supabaseUrl!==online.supabaseUrl){
-    ajustado.supabaseUrl=limparUrlSupabaseSistema(ajustado.supabaseUrl);
-    salvarConfigOnlineEscopoSistema(ajustado);
+    online.supabaseUrl=ajustado.supabaseUrl;
+    conf.online=online;
+    salvarConfigSistemaSeguro(conf);
   }
   return ajustado;
 }
@@ -13148,43 +12932,48 @@ function limparChaveSupabaseSistema(valor){
 }
 function coletarConfigOnlineSistema(){
   const anterior=configOnlineSistema();
-  const identidade=identidadeOnlineAtualSistema();
-  const emailAtual=identidade.email || emailUsuarioLogadoAtualSistema();
   return ajustarOnlineAoUsuarioAtualSistema({
-    ativo:camposCentralOnlineTelaSistema("onlineAtivoSistema").some(c=>c.checked),
-    supabaseUrl:limparUrlSupabaseSistema(valorCentralOnlineTelaSistema("onlineSupabaseUrl") || anterior.supabaseUrl || ""),
-    supabaseAnonKey:limparChaveSupabaseSistema(valorCentralOnlineTelaSistema("onlineSupabaseAnonKey") || anterior.supabaseAnonKey || ""),
-    clinicId:identidade.clinicId || (valorCentralOnlineTelaSistema("onlineClinicId") || anterior.clinicId || "").trim(),
-    email:emailAtual || "",
-    senha:valorCentralOnlineTelaSistema("onlineSenhaSistema") || ""
+    ativo:!!document.getElementById("onlineAtivoSistema")?.checked,
+    supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || ""),
+    supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || ""),
+    clinicId:(document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim(),
+    email:(document.getElementById("onlineEmailSistema")?.value || anterior.email || "").trim().toLowerCase(),
+    senha:document.getElementById("onlineSenhaSistema")?.value || ""
   });
 }
 function preencherConfigOnlineSistema(){
   const online=configOnlineSistema();
-  const identidade=identidadeOnlineAtualSistema();
-  const emailAtual=identidade.email || emailUsuarioLogadoAtualSistema();
-  aplicarMarcacaoCentralOnlineTelaSistema("onlineAtivoSistema",!!online.ativo);
-  aplicarValorCentralOnlineTelaSistema("onlineSupabaseUrl",online.supabaseUrl || "");
-  aplicarValorCentralOnlineTelaSistema("onlineSupabaseAnonKey",online.supabaseAnonKey || "");
-  aplicarValorCentralOnlineTelaSistema("onlineClinicId",online.clinicId || "");
-  aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailAtual || "");
-  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
+  const ativo=document.getElementById("onlineAtivoSistema");
+  const url=document.getElementById("onlineSupabaseUrl");
+  const key=document.getElementById("onlineSupabaseAnonKey");
+  const clinic=document.getElementById("onlineClinicId");
+  const email=document.getElementById("onlineEmailSistema");
+  const senha=document.getElementById("onlineSenhaSistema");
+  if(ativo) ativo.checked=!!online.ativo;
+  if(url) url.value=online.supabaseUrl || "";
+  if(key) key.value=online.supabaseAnonKey || "";
+  if(clinic) clinic.value=online.clinicId || "";
+  if(email) email.value=online.email || "";
+  if(senha) senha.value="";
 }
 function salvarConfigOnlineRapidoSistema(){
-  const online=coletarConfigOnlineSistema();
-  salvarConfigOnlineBaseSistema(online);
-  salvarConfigOnlineEscopoSistema(online);
+  const conf=configSistemaSeguro();
+  conf.online=coletarConfigOnlineSistema();
+  salvarConfigSistemaSeguro(conf);
   preencherConfigOnlineSistema();
-  aplicarTextoCentralOnlineTelaSistema(online.ativo ? `Conexão online salva para ${online.email || "usuario atual"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.");
+  const msg=document.getElementById("onlineStatusSistema");
+  if(msg) msg.innerText=conf.online.ativo ? `Conexão online salva com URL corrigida: ${conf.online.supabaseUrl || "vazia"}. Agora clique em Entrar online.` : "Configuração online salva, mas o modo online está desligado.";
 }
 function limparClinicaOnlineLocalSistema(){
-  const online=configOnlineSistema();
-  online.clinicId="";
-  online.senha="";
-  delete online.token;
-  salvarConfigOnlineEscopoSistema(online);
-  aplicarValorCentralOnlineTelaSistema("onlineClinicId","");
-  aplicarValorCentralOnlineTelaSistema("onlineSenhaSistema","");
+  const conf=configSistemaSeguro();
+  conf.online=conf.online || {};
+  conf.online.clinicId="";
+  conf.online.senha="";
+  salvarConfigSistemaSeguro(conf);
+  const campoClinic=document.getElementById("onlineClinicId");
+  const campoSenha=document.getElementById("onlineSenhaSistema");
+  if(campoClinic) campoClinic.value="";
+  if(campoSenha) campoSenha.value="";
 }
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
@@ -13214,31 +13003,7 @@ async function garantirSessaoOnlineDoUsuarioAtualSistema(){
     console.warn("Conferência da sessão online:",e);
   }
 }
-garantirSessaoOnlineDoUsuarioAtualSistema = async function(){
-  const usuario=usuarioAtualSistema();
-  const emailLocal=emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
-  if(emailLocal) aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
-  if(!emailLocal) return true;
-  const db=clienteSupabaseSistema();
-  if(!db || !db.auth) return true;
-  try{
-    const sessaoResp=await db.auth.getSession();
-    const emailOnline=emailNormalizadoSistema(sessaoResp?.data?.session?.user?.email || "");
-    if(emailOnline && emailOnline!==emailLocal){
-      await db.auth.signOut();
-      limparClinicaOnlineLocalSistema();
-      aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
-      aplicarTextoCentralOnlineTelaSistema(`Sessao online de ${emailOnline} desconectada. Entre online com ${emailLocal} para carregar a clinica correta.`);
-      return false;
-    }
-    return true;
-  }catch(e){
-    console.warn("Conferencia da sessao online:",e);
-    return false;
-  }
-};
 async function sistemaOnlinePodeSincronizarSilencioso(){
-  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return false;
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   if(!online.ativo || !db || !online.clinicId) return false;
@@ -13293,7 +13058,6 @@ function pacienteParaOnlineSistema(p){
 async function testarConexaoOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   salvarConfigOnlineRapidoSistema();
-  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   if(!online.ativo){if(msg) msg.innerText="Modo online está desligado.";return;}
@@ -13308,20 +13072,16 @@ async function testarConexaoOnlineSistema(){
 }
 async function entrarOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  const senhaDigitada=valorCentralOnlineTelaSistema("onlineSenhaSistema") || "";
-  const identidade=identidadeOnlineAtualSistema();
-  const emailObrigatorio=identidade.email || emailUsuarioLogadoAtualSistema();
-  if(emailObrigatorio) aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailObrigatorio);
+  const senhaDigitada=document.getElementById("onlineSenhaSistema")?.value || "";
   salvarConfigOnlineRapidoSistema();
   const db=clienteSupabaseSistema();
-  const email=emailObrigatorio || emailNormalizadoSistema(valorCentralOnlineTelaSistema("onlineEmailSistema"));
+  const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
   const senha=senhaDigitada;
   if(!db){if(msg) msg.innerText="Preencha URL e chave pública do Supabase antes de entrar.";return;}
   if(!email || !senha){if(msg) msg.innerText="Informe e-mail e senha do acesso online.";return;}
   if(msg) msg.innerText="Entrando no acesso online...";
   const {error}=await db.auth.signInWithPassword({email,password:senha});
   if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
-  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
   const liberado=await carregarPlanoClinicaOnlineSistema(false);
   if(msg) msg.innerText=liberado ? "Acesso online conectado. Agora você pode testar ou sincronizar os dados." : "Acesso online conectado, mas o plano precisa ser regularizado antes de usar o sistema.";
@@ -13527,15 +13287,6 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
       return false;
     }
-    const emailSessao=emailNormalizadoSistema(sessao.user && sessao.user.email || "");
-    const emailLocal=emailUsuarioLogadoAtualSistema();
-    if(emailSessao && emailLocal && emailSessao!==emailLocal){
-      await db.auth.signOut();
-      limparClinicaOnlineLocalSistema();
-      aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",emailLocal);
-      atualizarPainelPlanoComercialSistema({mensagem:`Sessao online de ${emailSessao} desconectada. Entre online com ${emailLocal}.`});
-      return false;
-    }
     const perfilResp=await consultaOnlineComTempoSistema(
       db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle(),
       "Consulta do perfil da clínica",
@@ -13549,19 +13300,12 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       return false;
     }
     const conf=configSistemaSeguro();
+    conf.online=conf.online || {};
+    conf.online.clinicId=perfil.clinic_id;
     ativarEscopoClinicaSistema(perfil.clinic_id);
-    const usuarioAtual=usuarioAtualSistema();
-    if(usuarioAtual && !usuarioSuperadminSistema(usuarioAtual)){
-      usuarioAtual.onlineClinicId=perfil.clinic_id;
-      definirUsuarioAtualSistema(usuarioAtual);
-    }
-    const onlineAtual=configOnlineSistema();
-    onlineAtual.clinicId=perfil.clinic_id;
-    onlineAtual.email=emailNormalizadoSistema(sessao.user.email || onlineAtual.email || "");
-    salvarConfigOnlineBaseSistema(onlineAtual);
-    salvarConfigOnlineEscopoSistema(onlineAtual);
-    aplicarValorCentralOnlineTelaSistema("onlineClinicId",perfil.clinic_id);
-    aplicarValorCentralOnlineTelaSistema("onlineEmailSistema",onlineAtual.email || emailUsuarioLogadoAtualSistema());
+    salvarConfigSistemaSeguro(conf);
+    const campoClinic=document.getElementById("onlineClinicId");
+    if(campoClinic) campoClinic.value=perfil.clinic_id;
 
     const clinicaResp=await consultaOnlineComTempoSistema(
       db.from("clinics").select("name").eq("id",perfil.clinic_id).maybeSingle(),
@@ -14099,10 +13843,10 @@ async function diagnosticarConexaoOnlineSistema(){
   try{
     salvarConfigOnlineRapidoSistema();
     const online=configOnlineSistema();
-    const email=emailUsuarioLogadoAtualSistema() || emailNormalizadoSistema(valorCentralOnlineTelaSistema("onlineEmailSistema"));
-    const senha=valorCentralOnlineTelaSistema("onlineSenhaSistema") || "";
-    aplicarValorCentralOnlineTelaSistema("onlineSupabaseUrl",online.supabaseUrl || "");
-    aplicarValorCentralOnlineTelaSistema("onlineSupabaseAnonKey",online.supabaseAnonKey || "");
+    const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
+    const senha=document.getElementById("onlineSenhaSistema")?.value || "";
+    if(document.getElementById("onlineSupabaseUrl")) document.getElementById("onlineSupabaseUrl").value=online.supabaseUrl || "";
+    if(document.getElementById("onlineSupabaseAnonKey")) document.getElementById("onlineSupabaseAnonKey").value=online.supabaseAnonKey || "";
     if(status) status.innerText="Rodando diagnóstico online...";
 
     marcar(!!online.ativo,"Modo online ativado",online.ativo ? "" : "marque a caixa Ativar modo online");
@@ -15086,14 +14830,8 @@ async function enviarFinanceiroOnlineSistema(){
   if(msg) msg.innerText=falhas ? `Financeiro enviado parcialmente: ${ok} registro(s), ${falhas} falha(s). Último erro: ${ultimoErro}. Se aparecer tabela não encontrada, rode o SQL da etapa 6 no Supabase.` : `${ok} registro(s) financeiros enviados para online com sucesso.`;
 }
 function financeiroOnlineParaLocalSistema(x){
-  const localId=String(x.local_id || x.id || "");
-  const totalParcelas=Number(x.installments || 1);
-  const matchParcela=totalParcelas>1 ? localId.match(/^(.*)-(\d+)$/) : null;
   return {
     id:x.local_id || x.id,
-    grupoParcelasId:matchParcela ? matchParcela[1] : "",
-    parcelaNumero:matchParcela ? Number(matchParcela[2]) : undefined,
-    parcelasTotal:totalParcelas,
     data:x.entry_date || "",
     tipo:x.type || "entrada",
     paciente:x.patients && x.patients.full_name ? x.patients.full_name : "",
@@ -15101,7 +14839,7 @@ function financeiroOnlineParaLocalSistema(x){
     descricao:x.description || "",
     categoria:x.category || "",
     pagamento:x.payment_method || "",
-    parcelas:totalParcelas,
+    parcelas:Number(x.installments || 1),
     taxaPerc:Number(x.fee_percent || 0),
     taxaValor:Number(x.fee_value || 0),
     valor:Number(x.gross_value || 0),
@@ -15415,7 +15153,6 @@ window.renderConfig = function(){
   renderConfigBaseProfissional();
   inserirPainelPreparacaoOnlineConfig();
   try{preencherConfigOnlineSistema();}catch(e){}
-  setTimeout(()=>{try{garantirSessaoOnlineDoUsuarioAtualSistema().then(()=>preencherConfigOnlineSistema());}catch(e){}},120);
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
@@ -15979,36 +15716,6 @@ window.abrirTela = function(id,b){
   return r;
 };
 try{ abrirTela = window.abrirTela; }catch(e){}
-const renderConfigBaseTelaSeguraSistema = window.renderConfig;
-window.renderConfig = function(){
-  const tela=document.getElementById("configuracoes");
-  if(tela && (tela.dataset.precisaRemontar==="1" || !document.getElementById("configProfissionaisLista"))){
-    garantirTelaConfiguracoesMontadaSistema();
-  }
-  try{
-    return renderConfigBaseTelaSeguraSistema();
-  }catch(e){
-    console.warn("Renderizacao de Configuracoes refeita:",e);
-    try{
-      montarTelaConfig();
-      return renderConfigBaseTelaSeguraSistema();
-    }catch(erro){
-      console.warn("Falha ao remontar Configuracoes:",erro);
-    }
-  }finally{
-    garantirTelaConfiguracoesMontadaSistema();
-  }
-};
-try{ renderConfig = window.renderConfig; }catch(e){}
-const abrirTelaBaseConfigSeguraSistema = window.abrirTela || abrirTela;
-window.abrirTela = function(id,b){
-  const r=abrirTelaBaseConfigSeguraSistema(id,b);
-  if(id==="configuracoes"){
-    setTimeout(()=>{try{garantirTelaConfiguracoesMontadaSistema();renderConfig();}catch(e){}},120);
-  }
-  return r;
-};
-try{ abrirTela = window.abrirTela; }catch(e){}
 function ajustarCanvasAssinaturaPro(canvas){
   const rect=canvas.getBoundingClientRect();
   const largura=Math.max(320,Math.round(rect.width || canvas.parentElement?.clientWidth || 900));
@@ -16227,10 +15934,9 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-05-configuracoes-completa-v17";
+const versaoAppInstalavelSistema = "2026-07-04-clinic-scope-fix";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
-let recarregouAtualizacaoAppSistema = false;
 
 function sistemaEstaInstaladoComoApp(){
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -16280,23 +15986,6 @@ window.addEventListener("appinstalled",function(){
 document.addEventListener("DOMContentLoaded",function(){
   atualizarBotaoInstalarAppSistema();
   if("serviceWorker" in navigator && location.protocol !== "file:"){
-    navigator.serviceWorker.addEventListener("controllerchange",function(){
-      if(recarregouAtualizacaoAppSistema) return;
-      const chave="gep_app_reloaded_"+versaoAppInstalavelSistema;
-      if(sessionStorage.getItem(chave)==="1") return;
-      recarregouAtualizacaoAppSistema=true;
-      sessionStorage.setItem(chave,"1");
-      window.location.reload();
-    });
-    navigator.serviceWorker.addEventListener("message",function(event){
-      if(event.data && event.data.type==="GEP_APP_UPDATED"){
-        const chave="gep_app_reloaded_"+versaoAppInstalavelSistema;
-        if(sessionStorage.getItem(chave)!=="1"){
-          sessionStorage.setItem(chave,"1");
-          window.location.reload();
-        }
-      }
-    });
     navigator.serviceWorker.register("./service-worker.js?v="+encodeURIComponent(versaoAppInstalavelSistema))
       .then(function(reg){ if(reg && reg.update) reg.update(); })
       .catch(function(e){ console.warn("Service worker nao registrado:",e); });

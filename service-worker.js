@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v15-20260705-configuracoes-render";
+const CACHE_NAME = "gestao-estetica-pro-app-v17-20260705-configuracoes-completa";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -21,6 +21,11 @@ self.addEventListener("activate", event => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then(clients => Promise.all(clients.map(client => {
+        if (client.url && "navigate" in client) return client.navigate(client.url);
+        return client.postMessage({ type: "GEP_APP_UPDATED", cache: CACHE_NAME });
+      })))
   );
 });
 

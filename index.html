@@ -3481,7 +3481,6 @@ function garantirTelaConfiguracoesMontadaSistema(){
   const temEstrutura=!!document.getElementById("configProfissionaisLista") && !!document.getElementById("painelPreparacaoOnline");
   if(!temEstrutura){
     try{
-      tela.innerHTML="";
       montarTelaConfig();
     }catch(e){
       console.warn("Nao foi possivel remontar Configuracoes:",e);
@@ -5144,7 +5143,9 @@ function configSistema(){
 
 function montarTelaConfig(){
   const tela = document.getElementById("configuracoes");
-  if(!tela || document.getElementById("configProfissionaisLista")) return;
+  if(!tela) return;
+  const completa=document.getElementById("configProfissionaisLista") && document.getElementById("configUsuariosLista") && document.getElementById("painelPreparacaoOnline");
+  if(completa) return;
   tela.innerHTML = `
     <div class="box">
       <h2>Configuracoes da clinica</h2>
@@ -15989,7 +15990,6 @@ window.renderConfig = function(){
   }catch(e){
     console.warn("Renderizacao de Configuracoes refeita:",e);
     try{
-      if(tela) tela.innerHTML="";
       montarTelaConfig();
       return renderConfigBaseTelaSeguraSistema();
     }catch(erro){
@@ -16227,9 +16227,10 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-05-configuracoes-render-v15";
+const versaoAppInstalavelSistema = "2026-07-05-configuracoes-completa-v17";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
+let recarregouAtualizacaoAppSistema = false;
 
 function sistemaEstaInstaladoComoApp(){
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -16279,6 +16280,23 @@ window.addEventListener("appinstalled",function(){
 document.addEventListener("DOMContentLoaded",function(){
   atualizarBotaoInstalarAppSistema();
   if("serviceWorker" in navigator && location.protocol !== "file:"){
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(recarregouAtualizacaoAppSistema) return;
+      const chave="gep_app_reloaded_"+versaoAppInstalavelSistema;
+      if(sessionStorage.getItem(chave)==="1") return;
+      recarregouAtualizacaoAppSistema=true;
+      sessionStorage.setItem(chave,"1");
+      window.location.reload();
+    });
+    navigator.serviceWorker.addEventListener("message",function(event){
+      if(event.data && event.data.type==="GEP_APP_UPDATED"){
+        const chave="gep_app_reloaded_"+versaoAppInstalavelSistema;
+        if(sessionStorage.getItem(chave)!=="1"){
+          sessionStorage.setItem(chave,"1");
+          window.location.reload();
+        }
+      }
+    });
     navigator.serviceWorker.register("./service-worker.js?v="+encodeURIComponent(versaoAppInstalavelSistema))
       .then(function(reg){ if(reg && reg.update) reg.update(); })
       .catch(function(e){ console.warn("Service worker nao registrado:",e); });

@@ -3433,7 +3433,7 @@ function entrarRapido(){
   try{ atualizarTudo(); }catch(e){ console.warn("Atualização visual após login falhou:", e); }
   verificarPlanoComercialAoEntrarSistema();
 }
-function sairSistema(){removerBloqueioPlanoComercialSistema();delete window.__loginEmailPendenteSistema;sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
+function sairSistema(){try{const db=clienteSupabaseSistema();if(db&&db.auth) db.auth.signOut();}catch(e){}removerBloqueioPlanoComercialSistema();delete window.__loginEmailPendenteSistema;sessionStorage.removeItem("gepV2_usuarioLogado");limparEscopoClinicaSistema();window.usuarioLogadoSistema=null;app.classList.remove("active");loginPage.style.display="block"}
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
   prontuarioAbaAtual = aba || "resumo";
@@ -12663,7 +12663,7 @@ window.entrarSistema = async function(){
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
   atualizarTudo();
-  try{garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
+  try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -12961,7 +12961,33 @@ async function garantirSessaoOnlineDoUsuarioAtualSistema(){
     console.warn("Conferência da sessão online:",e);
   }
 }
+garantirSessaoOnlineDoUsuarioAtualSistema = async function(){
+  const usuario=usuarioAtualSistema();
+  const emailLocal=emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
+  const campoEmail=document.getElementById("onlineEmailSistema");
+  if(emailLocal && campoEmail) campoEmail.value=emailLocal;
+  if(!emailLocal) return true;
+  const db=clienteSupabaseSistema();
+  if(!db || !db.auth) return true;
+  try{
+    const sessaoResp=await db.auth.getSession();
+    const emailOnline=emailNormalizadoSistema(sessaoResp?.data?.session?.user?.email || "");
+    if(emailOnline && emailOnline!==emailLocal){
+      await db.auth.signOut();
+      limparClinicaOnlineLocalSistema();
+      if(campoEmail) campoEmail.value=emailLocal;
+      const msg=document.getElementById("onlineStatusSistema");
+      if(msg) msg.innerText=`Sessao online de ${emailOnline} desconectada. Entre online com ${emailLocal} para carregar a clinica correta.`;
+      return false;
+    }
+    return true;
+  }catch(e){
+    console.warn("Conferencia da sessao online:",e);
+    return false;
+  }
+};
 async function sistemaOnlinePodeSincronizarSilencioso(){
+  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return false;
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   if(!online.ativo || !db || !online.clinicId) return false;
@@ -13016,6 +13042,7 @@ function pacienteParaOnlineSistema(p){
 async function testarConexaoOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   salvarConfigOnlineRapidoSistema();
+  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   if(!online.ativo){if(msg) msg.innerText="Modo online está desligado.";return;}
@@ -13031,14 +13058,19 @@ async function testarConexaoOnlineSistema(){
 async function entrarOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   const senhaDigitada=document.getElementById("onlineSenhaSistema")?.value || "";
+  const identidade=identidadeOnlineAtualSistema();
+  const emailObrigatorio=identidade.email || "";
+  const campoEmail=document.getElementById("onlineEmailSistema");
+  if(emailObrigatorio && campoEmail) campoEmail.value=emailObrigatorio;
   salvarConfigOnlineRapidoSistema();
   const db=clienteSupabaseSistema();
-  const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
+  const email=emailObrigatorio || (document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
   const senha=senhaDigitada;
   if(!db){if(msg) msg.innerText="Preencha URL e chave pública do Supabase antes de entrar.";return;}
   if(!email || !senha){if(msg) msg.innerText="Informe e-mail e senha do acesso online.";return;}
   if(msg) msg.innerText="Entrando no acesso online...";
   const {error}=await db.auth.signInWithPassword({email,password:senha});
+  if(!(await garantirSessaoOnlineDoUsuarioAtualSistema())) return;
   if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
   if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
   const liberado=await carregarPlanoClinicaOnlineSistema(false);
@@ -15118,6 +15150,7 @@ window.renderConfig = function(){
   renderConfigBaseProfissional();
   inserirPainelPreparacaoOnlineConfig();
   try{preencherConfigOnlineSistema();}catch(e){}
+  setTimeout(()=>{try{garantirSessaoOnlineDoUsuarioAtualSistema().then(()=>preencherConfigOnlineSistema());}catch(e){}},120);
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
@@ -15899,7 +15932,7 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-04-clinic-scope-fix";
+const versaoAppInstalavelSistema = "2026-07-05-online-session-guard-v10";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
 

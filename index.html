@@ -3472,7 +3472,22 @@ function limparCamposCentralOnlineTelaSistema(emailAtual=""){
 }
 function limparTelaConfiguracoesSessaoSistema(){
   const tela=document.getElementById("configuracoes");
-  if(tela) tela.innerHTML='<div class="box"></div>';
+  if(!tela) return;
+  tela.dataset.precisaRemontar="1";
+}
+function garantirTelaConfiguracoesMontadaSistema(){
+  const tela=document.getElementById("configuracoes");
+  if(!tela) return;
+  const temEstrutura=!!document.getElementById("configProfissionaisLista") && !!document.getElementById("painelPreparacaoOnline");
+  if(!temEstrutura){
+    try{
+      tela.innerHTML="";
+      montarTelaConfig();
+    }catch(e){
+      console.warn("Nao foi possivel remontar Configuracoes:",e);
+    }
+  }
+  try{delete tela.dataset.precisaRemontar;}catch(e){}
 }
 function limparMemoriaSessaoSistema(){
   try{
@@ -15963,6 +15978,37 @@ window.abrirTela = function(id,b){
   return r;
 };
 try{ abrirTela = window.abrirTela; }catch(e){}
+const renderConfigBaseTelaSeguraSistema = window.renderConfig;
+window.renderConfig = function(){
+  const tela=document.getElementById("configuracoes");
+  if(tela && (tela.dataset.precisaRemontar==="1" || !document.getElementById("configProfissionaisLista"))){
+    garantirTelaConfiguracoesMontadaSistema();
+  }
+  try{
+    return renderConfigBaseTelaSeguraSistema();
+  }catch(e){
+    console.warn("Renderizacao de Configuracoes refeita:",e);
+    try{
+      if(tela) tela.innerHTML="";
+      montarTelaConfig();
+      return renderConfigBaseTelaSeguraSistema();
+    }catch(erro){
+      console.warn("Falha ao remontar Configuracoes:",erro);
+    }
+  }finally{
+    garantirTelaConfiguracoesMontadaSistema();
+  }
+};
+try{ renderConfig = window.renderConfig; }catch(e){}
+const abrirTelaBaseConfigSeguraSistema = window.abrirTela || abrirTela;
+window.abrirTela = function(id,b){
+  const r=abrirTelaBaseConfigSeguraSistema(id,b);
+  if(id==="configuracoes"){
+    setTimeout(()=>{try{garantirTelaConfiguracoesMontadaSistema();renderConfig();}catch(e){}},120);
+  }
+  return r;
+};
+try{ abrirTela = window.abrirTela; }catch(e){}
 function ajustarCanvasAssinaturaPro(canvas){
   const rect=canvas.getBoundingClientRect();
   const largura=Math.max(320,Math.round(rect.width || canvas.parentElement?.clientWidth || 900));
@@ -16181,7 +16227,7 @@ window.renderProntuarioCompletoSeguro = renderProntuarioProfissional;
 window.montarVisualProntuarioComEditar = function(){};
 document.addEventListener("DOMContentLoaded",function(){setTimeout(renderProntuarioProfissional,350);setTimeout(()=>importarEstoqueBaseClinica(false),500);});
 
-const versaoAppInstalavelSistema = "2026-07-05-financeiro-parcelas-v14";
+const versaoAppInstalavelSistema = "2026-07-05-configuracoes-render-v15";
 window.GEP_APP_VERSION = versaoAppInstalavelSistema;
 let promptInstalacaoAppSistema = null;
 

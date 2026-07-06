@@ -10130,6 +10130,8 @@ function contasReceberFinanceiroSistema(){
   get("financeiroPro").forEach(x=>{
     if(!statusFinanceiroAbertoSistema(x) || statusFinanceiroCanceladoSistema(x)) return;
     itens.push({
+      tipo:"financeiro",
+      id:x.id,
       data:x.data || hojeFinanceiro(),
       origem:origemFinanceiroPro(x),
       nome:x.pagador || x.paciente || "ClÃ­nica / despesa geral",
@@ -10141,6 +10143,8 @@ function contasReceberFinanceiroSistema(){
     const aberto = valorAbertoCobrancaFinanceiroSistema(x);
     if(aberto <= 0) return;
     itens.push({
+      tipo:"cobranca",
+      id:x.id,
       data:x.vencimento || x.data || hojeFinanceiro(),
       origem:"ProntuÃ¡rio",
       nome:x.paciente || "Paciente",
@@ -10149,6 +10153,70 @@ function contasReceberFinanceiroSistema(){
     });
   });
   return itens.sort((a,b)=>String(a.data || "").localeCompare(String(b.data || "")));
+}
+function contaReceberVencidaFinanceiroSistema(item){
+  return String(item?.data || "") < hojeFinanceiro();
+}
+function marcarContaReceberComoPagaSistema(tipo,id){
+  const origem = String(tipo || "");
+  const chave = String(id || "");
+  if(!chave) return;
+  if(!confirm("Marcar esta conta como paga hoje?")) return;
+
+  if(origem === "financeiro"){
+    const lista = get("financeiroPro");
+    const idx = lista.findIndex(x=>String(x.id) === chave);
+    if(idx < 0){alert("Conta nao encontrada.");return;}
+    lista[idx] = {...lista[idx],status:"Pago",dataPagamento:hojeFinanceiro(),data:hojeFinanceiro()};
+    set("financeiroPro",lista);
+  }
+
+  if(origem === "cobranca"){
+    const cobrancas = get("cobrancasProntuario");
+    const idx = cobrancas.findIndex(x=>String(x.id) === chave);
+    if(idx < 0){alert("Cobranca nao encontrada.");return;}
+    const cobranca = cobrancas[idx];
+    const total = numeroFinanceiroSistema(cobranca.valorTotal || cobranca.valor || 0);
+    const pagoAntes = numeroFinanceiroSistema(cobranca.valorPago || cobranca.pago || 0);
+    const saldo = Math.max(total - pagoAntes, 0);
+    cobrancas[idx] = {...cobranca,status:"Pago",valorPago:total,dataPagamento:hojeFinanceiro()};
+    set("cobrancasProntuario",cobrancas);
+
+    if(saldo > 0){
+      const taxaPerc = numeroFinanceiroSistema(cobranca.taxaPerc || 0);
+      const taxaValor = arredondarFinanceiroSistema(saldo * (taxaPerc / 100));
+      const liquido = arredondarFinanceiroSistema(saldo - taxaValor);
+      const fin = get("financeiroPro");
+      fin.push({
+        id:Date.now()+Math.random(),
+        cobrancaId:cobranca.id,
+        data:hojeFinanceiro(),
+        tipo:"entrada",
+        paciente:cobranca.paciente || "",
+        pagador:cobranca.paciente || "",
+        descricao:"Pagamento restante - " + (cobranca.procedimento || cobranca.proc || "Procedimento"),
+        categoria:"Procedimento / Prontuario",
+        origem:"Prontuario",
+        pagamento:cobranca.forma || "Pix",
+        parcelas:1,
+        taxaPerc,
+        taxaValor,
+        valor:saldo,
+        liquido,
+        status:"Pago"
+      });
+      set("financeiroPro",fin);
+    }
+  }
+
+  renderFinanceiroPro();
+  try{renderCobrancasProntuario();}catch(e){}
+  try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
+}
+function itemContaReceberFinanceiroSistema(x){
+  const idSeguro = String(x.id || "").replace(/'/g,"\\'");
+  const vencida = contaReceberVencidaFinanceiroSistema(x) ? " - Vencida" : "";
+  return `<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} - ${textoFinanceiroSeguroSistema(x.data)}${vencida}</small></span><span><strong>${moedaFinanceiro(x.valor)}</strong><br><button class="btn-mini" onclick="marcarContaReceberComoPagaSistema('${x.tipo}','${idSeguro}')">Marcar pago</button></span></div>`;
 }
 function renderResumoAvancadoFinanceiroSistema(){
   const contas = document.getElementById("finContasReceber");
@@ -10167,6 +10235,27 @@ function renderResumoAvancadoFinanceiroSistema(){
     faturas.innerHTML = itens.length ? itens.map(x=>`
       <div class="item">
         <span><b>${mesAnoFinanceiroSistema(x.mes + "-01")}</b><br>${x.qtd} parcela(s) prevista(s)<br><small>Taxas: ${moedaFinanceiro(x.taxa)} Â· LÃ­quido: ${moedaFinanceiro(x.liquido)}</small></span>
+        <strong>${moedaFinanceiro(x.bruto)}</strong>
+      </div>`).join("") : "<div class='item'>Nenhuma fatura futura encontrada.</div>";
+  }
+}
+function renderResumoAvancadoFinanceiroSistema(){
+  const contas = document.getElementById("finContasReceber");
+  if(contas){
+    const itens = contasReceberFinanceiroSistema();
+    const total = itens.reduce((s,x)=>s + Number(x.valor || 0),0);
+    contas.innerHTML = itens.length ? `
+      <div class="fin-mini-resumo"><b>Total em aberto:</b> ${moedaFinanceiro(total)}</div>
+      ${itens.slice(0,8).map(itemContaReceberFinanceiroSistema).join("")}
+    ` : "<div class='item'>Nenhuma conta em aberto.</div>";
+  }
+
+  const faturas = document.getElementById("finFaturasCartao");
+  if(faturas){
+    const itens = faturasCartaoFinanceiroSistema(get("financeiroPro"));
+    faturas.innerHTML = itens.length ? itens.map(x=>`
+      <div class="item">
+        <span><b>${mesAnoFinanceiroSistema(x.mes + "-01")}</b><br>${x.qtd} parcela(s) prevista(s)<br><small>Taxas: ${moedaFinanceiro(x.taxa)} - Liquido: ${moedaFinanceiro(x.liquido)}</small></span>
         <strong>${moedaFinanceiro(x.bruto)}</strong>
       </div>`).join("") : "<div class='item'>Nenhuma fatura futura encontrada.</div>";
   }
@@ -10500,7 +10589,7 @@ function removerCobrancaProntuario(id){
   try{excluirOnlinePorLocalIdSistema("procedure_charges",id);}catch(e){}
   try{excluirOnlinePorLocalIdSistema("financial_entries",id);}catch(e){}
   set("cobrancasProntuario", get("cobrancasProntuario").filter(x => Number(x.id) !== Number(id)));
-  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id)));
+  set("financeiroPro", get("financeiroPro").filter(x => Number(x.id) !== Number(id) && String(x.cobrancaId || "") !== String(id)));
   renderCobrancasProntuario();
   try{ renderFinanceiroPro(); }catch(e){}
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}

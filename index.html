@@ -2901,6 +2901,7 @@ body > #resultadoPacientes{
             <p><b>Cartão:</b> controla taxa da maquininha e valor líquido.</p>
             <p><b>Parcelamentos:</b> registra quantidade de parcelas.</p>
             <p><b>Contas:</b> separa pagos e em aberto.</p>
+            <div id="finRelatorioPeriodo" class="list"></div>
           </div>
         </div>
       </div>
@@ -10260,6 +10261,83 @@ function renderResumoAvancadoFinanceiroSistema(){
       </div>`).join("") : "<div class='item'>Nenhuma fatura futura encontrada.</div>";
   }
 }
+function dataNoPeriodoFinanceiroSistema(data, inicio, fim){
+  const d = String(data || "").slice(0,10);
+  if(!d) return false;
+  if(inicio && d < inicio) return false;
+  if(fim && d > fim) return false;
+  return true;
+}
+function periodoRelatorioFinanceiroSistema(inicio, fim){
+  if(inicio && fim) return `${inicio} ate ${fim}`;
+  if(inicio) return `A partir de ${inicio}`;
+  if(fim) return `Ate ${fim}`;
+  return "Todos os registros";
+}
+function resumoPeriodoFinanceiroSistema(inicio, fim){
+  const usaPeriodo = !!(inicio || fim);
+  const resumo = {entradas:0, saidas:0, taxas:0, liquido:0, lucro:0, aberto:0, vencido:0, futuro:0, despesasFuturas:0, meses:new Map()};
+  parcelasFinanceiroSistema(get("financeiroPro")).forEach(x=>{
+    const data = String(x.data || "").slice(0,10);
+    const noPeriodo = dataNoPeriodoFinanceiroSistema(data,inicio,fim);
+    const tipo = String(x.tipo || "").toLowerCase();
+    if(x.realizado && noPeriodo){
+      const mes = data.slice(0,7) || "sem-data";
+      if(!resumo.meses.has(mes)) resumo.meses.set(mes,{mes,entradas:0,saidas:0,taxas:0,lucro:0});
+      const linhaMes = resumo.meses.get(mes);
+      if(tipo === "saida"){
+        resumo.saidas += Number(x.valor || 0);
+        linhaMes.saidas += Number(x.valor || 0);
+      }else{
+        resumo.entradas += Number(x.valor || 0);
+        resumo.taxas += Number(x.taxaValor || 0);
+        resumo.liquido += Number(x.liquido || x.valor || 0);
+        linhaMes.entradas += Number(x.valor || 0);
+        linhaMes.taxas += Number(x.taxaValor || 0);
+      }
+      linhaMes.lucro = linhaMes.entradas - linhaMes.saidas - linhaMes.taxas;
+    }
+    if(x.realizado && data > hojeFinanceiro() && (!usaPeriodo || noPeriodo)){
+      if(tipo === "saida") resumo.despesasFuturas += Number(x.valor || 0);
+      else resumo.futuro += Number(x.valor || 0);
+    }
+  });
+
+  contasReceberFinanceiroSistema()
+    .filter(x=>!usaPeriodo || dataNoPeriodoFinanceiroSistema(x.data,inicio,fim))
+    .forEach(x=>{
+      resumo.aberto += Number(x.valor || 0);
+      if(contaReceberVencidaFinanceiroSistema(x)) resumo.vencido += Number(x.valor || 0);
+    });
+
+  resumo.lucro = resumo.entradas - resumo.saidas - resumo.taxas;
+  resumo.meses = [...resumo.meses.values()].sort((a,b)=>b.mes.localeCompare(a.mes)).slice(0,6);
+  return resumo;
+}
+function linhaRelatorioFinanceiroSistema(titulo, valor, detalhe){
+  return `<div class="item"><span><b>${textoFinanceiroSeguroSistema(titulo)}</b>${detalhe ? `<br><small>${textoFinanceiroSeguroSistema(detalhe)}</small>` : ""}</span><strong>${moedaFinanceiro(valor)}</strong></div>`;
+}
+function renderRelatorioPeriodoFinanceiroSistema(){
+  const alvo = document.getElementById("finRelatorioPeriodo");
+  if(!alvo) return;
+  const inicio = document.getElementById("finFiltroInicio")?.value || "";
+  const fim = document.getElementById("finFiltroFim")?.value || "";
+  const r = resumoPeriodoFinanceiroSistema(inicio,fim);
+  const meses = r.meses.length ? r.meses.map(m=>`<div class="item"><span><b>${mesAnoFinanceiroSistema(m.mes + "-01")}</b><br><small>Entradas ${moedaFinanceiro(m.entradas)} - Saidas ${moedaFinanceiro(m.saidas)} - Taxas ${moedaFinanceiro(m.taxas)}</small></span><strong>${moedaFinanceiro(m.lucro)}</strong></div>`).join("") : "<div class='item'>Nenhum movimento realizado neste periodo.</div>";
+  alvo.innerHTML = `
+    <div class="fin-mini-resumo"><b>Periodo:</b> ${textoFinanceiroSeguroSistema(periodoRelatorioFinanceiroSistema(inicio,fim))}</div>
+    ${linhaRelatorioFinanceiroSistema("Entradas realizadas",r.entradas,"dinheiro recebido no periodo")}
+    ${linhaRelatorioFinanceiroSistema("Saidas realizadas",r.saidas,"despesas pagas no periodo")}
+    ${linhaRelatorioFinanceiroSistema("Taxas da maquininha",r.taxas,"taxas calculadas no periodo")}
+    ${linhaRelatorioFinanceiroSistema("Lucro liquido",r.lucro,"entradas - saidas - taxas")}
+    ${linhaRelatorioFinanceiroSistema("Contas em aberto",r.aberto,"pendentes dentro do periodo")}
+    ${linhaRelatorioFinanceiroSistema("Contas vencidas",r.vencido,"pendentes com data anterior a hoje")}
+    ${linhaRelatorioFinanceiroSistema("Recebimentos futuros",r.futuro,"parcelas futuras previstas")}
+    ${linhaRelatorioFinanceiroSistema("Despesas futuras",r.despesasFuturas,"saidas futuras previstas")}
+    <div class="fin-mini-resumo"><b>Resumo por mes</b></div>
+    ${meses}
+  `;
+}
 function dadosTaxaFinanceiroPro(){
   const valor = Number(document.getElementById("finValorLanc")?.value || 0);
   const tipo = document.getElementById("finTipoLanc")?.value || "entrada";
@@ -10436,6 +10514,7 @@ function renderFinanceiroPro(){
   setTxt("finResumoSaidas", moedaFinanceiro(saidas));
   setTxt("finResumoTaxas", moedaFinanceiro(taxas));
   setTxt("finResumoLucro", moedaFinanceiro(entradas - saidas - taxas));
+  renderRelatorioPeriodoFinanceiroSistema();
   renderResumoAvancadoFinanceiroSistema();
 
   const tb = document.getElementById("finTabelaPro");

@@ -10036,17 +10036,6 @@ function adicionarMesesFinanceiroSistema(data, meses){
   base.setDate(Math.min(dia, ultimoDia));
   return base.toISOString().slice(0,10);
 }
-function statusFinanceiroRealizadoSistema(item){
-  const status = String(item?.status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
-  return !["em aberto","aberto","pendente","vencido","nao pago","não pago"].includes(status);
-}
-function statusCobrancaFinanceiroSistema(statusInformado, total, pago){
-  const valorTotal = numeroFinanceiroSistema(total);
-  const valorPago = numeroFinanceiroSistema(pago);
-  if(valorPago <= 0) return "Em aberto";
-  if(valorTotal > 0 && valorPago < valorTotal) return "Parcial";
-  return statusInformado === "Em aberto" ? "Pago" : (statusInformado || "Pago");
-}
 function textoStatusFinanceiroSistema(status){
   return String(status || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 }
@@ -10235,27 +10224,6 @@ function itemContaReceberFinanceiroSistema(x){
   const idSeguro = String(x.id || "").replace(/'/g,"\\'");
   const vencida = contaReceberVencidaFinanceiroSistema(x) ? " - Vencida" : "";
   return `<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} - ${textoFinanceiroSeguroSistema(x.data)}${vencida}</small></span><span><strong>${moedaFinanceiro(x.valor)}</strong><br><button class="btn-mini" onclick="marcarContaReceberComoPagaSistema('${x.tipo}','${idSeguro}')">Marcar pago</button></span></div>`;
-}
-function renderResumoAvancadoFinanceiroSistema(){
-  const contas = document.getElementById("finContasReceber");
-  if(contas){
-    const itens = contasReceberFinanceiroSistema();
-    const total = itens.reduce((s,x)=>s + Number(x.valor || 0),0);
-    contas.innerHTML = itens.length ? `
-      <div class="fin-mini-resumo"><b>Total em aberto:</b> ${moedaFinanceiro(total)}</div>
-      ${itens.slice(0,8).map(x=>`<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} Â· ${textoFinanceiroSeguroSistema(x.data)}</small></span><strong>${moedaFinanceiro(x.valor)}</strong></div>`).join("")}
-    ` : "<div class='item'>Nenhuma conta em aberto.</div>";
-  }
-
-  const faturas = document.getElementById("finFaturasCartao");
-  if(faturas){
-    const itens = faturasCartaoFinanceiroSistema(get("financeiroPro"));
-    faturas.innerHTML = itens.length ? itens.map(x=>`
-      <div class="item">
-        <span><b>${mesAnoFinanceiroSistema(x.mes + "-01")}</b><br>${x.qtd} parcela(s) prevista(s)<br><small>Taxas: ${moedaFinanceiro(x.taxa)} Â· LÃ­quido: ${moedaFinanceiro(x.liquido)}</small></span>
-        <strong>${moedaFinanceiro(x.bruto)}</strong>
-      </div>`).join("") : "<div class='item'>Nenhuma fatura futura encontrada.</div>";
-  }
 }
 function renderResumoAvancadoFinanceiroSistema(){
   const contas = document.getElementById("finContasReceber");

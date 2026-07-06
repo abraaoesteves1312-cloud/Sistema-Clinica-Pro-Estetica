@@ -2927,6 +2927,23 @@ body > #resultadoPacientes{
         </div>
       </div>
 
+      <div class="card" style="margin-top:18px">
+        <h3>Fechamento mensal</h3>
+        <div class="form-duplo">
+          <input id="finMesFechamento" type="month">
+          <select id="finStatusFechamento">
+            <option>Aberto</option>
+            <option>Conferido</option>
+            <option>Fechado</option>
+          </select>
+        </div>
+        <div class="form-duplo">
+          <button class="btn-light" onclick="renderFechamentoMensalFinanceiroSistema()">Atualizar fechamento</button>
+          <button class="btn-main" onclick="salvarFechamentoMensalFinanceiroSistema()">Salvar status do mes</button>
+        </div>
+        <div id="finFechamentoMensal" class="list"></div>
+      </div>
+
       <div id="listaFinanceiro" style="display:none"></div>
     </div>
   </div>
@@ -10338,6 +10355,100 @@ function renderRelatorioPeriodoFinanceiroSistema(){
     ${meses}
   `;
 }
+function mesAtualFechamentoFinanceiroSistema(){
+  return hojeFinanceiro().slice(0,7);
+}
+function periodoMesFinanceiroSistema(mes){
+  const valor = String(mes || mesAtualFechamentoFinanceiroSistema()).slice(0,7);
+  const partes = valor.split("-");
+  const ano = Number(partes[0] || new Date().getFullYear());
+  const mesNumero = Number(partes[1] || (new Date().getMonth()+1));
+  const inicio = `${ano}-${String(mesNumero).padStart(2,"0")}-01`;
+  const ultimo = new Date(ano, mesNumero, 0).getDate();
+  const fim = `${ano}-${String(mesNumero).padStart(2,"0")}-${String(ultimo).padStart(2,"0")}`;
+  return {mes:valor,inicio,fim};
+}
+function fechamentosFinanceirosSistema(){
+  const lista = get("fechamentosFinanceiros");
+  return Array.isArray(lista) ? lista : [];
+}
+function fechamentoSalvoFinanceiroSistema(mes){
+  return fechamentosFinanceirosSistema().find(x=>String(x.mes) === String(mes)) || null;
+}
+function resumoFechamentoMensalFinanceiroSistema(mes){
+  const periodo = periodoMesFinanceiroSistema(mes);
+  const resumo = resumoPeriodoFinanceiroSistema(periodo.inicio,periodo.fim);
+  const contasMes = contasReceberFinanceiroSistema().filter(x=>dataNoPeriodoFinanceiroSistema(x.data,periodo.inicio,periodo.fim));
+  let futuroAposMes = 0;
+  parcelasFinanceiroSistema(get("financeiroPro")).forEach(x=>{
+    const data = String(x.data || "").slice(0,10);
+    const tipo = String(x.tipo || "").toLowerCase();
+    if(x.realizado && tipo === "entrada" && data > periodo.fim) futuroAposMes += Number(x.valor || 0);
+  });
+  return {
+    ...resumo,
+    periodo,
+    contasMesQuantidade:contasMes.length,
+    futuroAposMes,
+    salvo:fechamentoSalvoFinanceiroSistema(periodo.mes)
+  };
+}
+function statusFechamentoFinanceiroSistema(status){
+  const texto = String(status || "Aberto");
+  if(texto === "Fechado") return "tag-ok";
+  if(texto === "Conferido") return "tag-alerta";
+  return "prontuario-badge";
+}
+function renderFechamentoMensalFinanceiroSistema(){
+  const campoMes = document.getElementById("finMesFechamento");
+  if(campoMes && !campoMes.value) campoMes.value = mesAtualFechamentoFinanceiroSistema();
+  const mes = campoMes?.value || mesAtualFechamentoFinanceiroSistema();
+  const fechamento = resumoFechamentoMensalFinanceiroSistema(mes);
+  const status = fechamento.salvo?.status || "Aberto";
+  const selectStatus = document.getElementById("finStatusFechamento");
+  if(selectStatus) selectStatus.value = status;
+  const alvo = document.getElementById("finFechamentoMensal");
+  if(!alvo) return;
+  const alerta = fechamento.aberto > 0 ? `Existe ${moedaFinanceiro(fechamento.aberto)} em aberto neste mes.` : "Mes sem contas abertas.";
+  alvo.innerHTML = `
+    <div class="item"><span><b>${mesAnoFinanceiroSistema(fechamento.periodo.inicio)}</b><br><small>${fechamento.periodo.inicio} ate ${fechamento.periodo.fim}</small></span><span class="${statusFechamentoFinanceiroSistema(status)}">${textoFinanceiroSeguroSistema(status)}</span></div>
+    ${linhaRelatorioFinanceiroSistema("Entradas do mes",fechamento.entradas,"recebidas no mes escolhido")}
+    ${linhaRelatorioFinanceiroSistema("Saidas do mes",fechamento.saidas,"despesas pagas no mes")}
+    ${linhaRelatorioFinanceiroSistema("Taxas do mes",fechamento.taxas,"maquininha/cartao")}
+    ${linhaRelatorioFinanceiroSistema("Lucro liquido do mes",fechamento.lucro,"entradas - saidas - taxas")}
+    ${linhaRelatorioFinanceiroSistema("Contas abertas do mes",fechamento.aberto,`${fechamento.contasMesQuantidade} pendencia(s). ${alerta}`)}
+    ${linhaRelatorioFinanceiroSistema("Contas vencidas do mes",fechamento.vencido,"pendencias anteriores a hoje")}
+    ${linhaRelatorioFinanceiroSistema("Recebimentos futuros apos o mes",fechamento.futuroAposMes,"parcelas previstas depois deste fechamento")}
+    <div class="fin-mini-resumo"><b>Ultima conferencia:</b> ${textoFinanceiroSeguroSistema(fechamento.salvo?.data || "Ainda nao salva")}</div>
+  `;
+}
+function salvarFechamentoMensalFinanceiroSistema(){
+  const campoMes = document.getElementById("finMesFechamento");
+  if(campoMes && !campoMes.value) campoMes.value = mesAtualFechamentoFinanceiroSistema();
+  const mes = campoMes?.value || mesAtualFechamentoFinanceiroSistema();
+  const status = document.getElementById("finStatusFechamento")?.value || "Aberto";
+  const fechamento = resumoFechamentoMensalFinanceiroSistema(mes);
+  const lista = fechamentosFinanceirosSistema();
+  const registro = {
+    id:mes,
+    mes,
+    status,
+    data:new Date().toLocaleString("pt-BR"),
+    entradas:fechamento.entradas,
+    saidas:fechamento.saidas,
+    taxas:fechamento.taxas,
+    lucro:fechamento.lucro,
+    aberto:fechamento.aberto,
+    vencido:fechamento.vencido
+  };
+  const idx = lista.findIndex(x=>String(x.mes) === String(mes));
+  if(idx >= 0) lista[idx] = {...lista[idx],...registro};
+  else lista.push(registro);
+  set("fechamentosFinanceiros",lista);
+  renderFechamentoMensalFinanceiroSistema();
+  try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
+  alert("Fechamento mensal salvo.");
+}
 function dadosTaxaFinanceiroPro(){
   const valor = Number(document.getElementById("finValorLanc")?.value || 0);
   const tipo = document.getElementById("finTipoLanc")?.value || "entrada";
@@ -10516,6 +10627,7 @@ function renderFinanceiroPro(){
   setTxt("finResumoLucro", moedaFinanceiro(entradas - saidas - taxas));
   renderRelatorioPeriodoFinanceiroSistema();
   renderResumoAvancadoFinanceiroSistema();
+  renderFechamentoMensalFinanceiroSistema();
 
   const tb = document.getElementById("finTabelaPro");
   if(!tb) return;

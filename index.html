@@ -13290,7 +13290,16 @@ function chaveSupabaseComercialSistema(){
 }
 
 function usuarioSessaoAtualSistema(){
+  if(window.usuarioLogadoSistema) return window.usuarioLogadoSistema;
   try{return JSON.parse(sessionStorage.getItem("gepV2_usuarioLogado") || "null")}catch(e){return null}
+}
+
+function dadosOnlineDoUsuarioAtualSistema(){
+  const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
+  if(!sessao || usuarioSuperadminSistema(sessao)) return {email:"",clinicId:""};
+  const email=emailNormalizadoSistema(sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail);
+  const clinicId=String(sessao.onlineClinicId || "").trim();
+  return {email,clinicId};
 }
 
 function ajustarOnlineAoUsuarioAtualSistema(online){
@@ -13298,8 +13307,9 @@ function ajustarOnlineAoUsuarioAtualSistema(online){
   const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
   if(sessao && !usuarioSuperadminSistema(sessao)){
     const emailAnterior=emailNormalizadoSistema(ajustado.email || "");
-    const cid=String(sessao.onlineClinicId || "").trim();
-    const email=emailNormalizadoSistema(sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail);
+    const dados=dadosOnlineDoUsuarioAtualSistema();
+    const cid=dados.clinicId;
+    const email=dados.email;
     if(cid) ajustado.clinicId=cid;
     else if(email && emailAnterior && emailAnterior!==email) ajustado.clinicId="";
     if(email) ajustado.email=email;
@@ -13315,13 +13325,28 @@ function configOnlineSistema(){
   const conf=configSistemaSeguro();
   const online={...(conf.online || {})};
   const ajustado=ajustarOnlineAoUsuarioAtualSistema(online);
+  let precisaSalvar=false;
   if(ajustado.supabaseUrl && ajustado.supabaseUrl!==online.supabaseUrl){
     online.supabaseUrl=ajustado.supabaseUrl;
-    conf.online=online;
-    salvarConfigSistemaSeguro(conf);
+    precisaSalvar=true;
   }
   if(ajustado.supabaseAnonKey && ajustado.supabaseAnonKey!==online.supabaseAnonKey){
     online.supabaseAnonKey=ajustado.supabaseAnonKey;
+    precisaSalvar=true;
+  }
+  if(ajustado.clinicId!==online.clinicId){
+    online.clinicId=ajustado.clinicId || "";
+    precisaSalvar=true;
+  }
+  if(ajustado.email!==online.email){
+    online.email=ajustado.email || "";
+    precisaSalvar=true;
+  }
+  if(online.senha){
+    online.senha="";
+    precisaSalvar=true;
+  }
+  if(precisaSalvar){
     conf.online=online;
     salvarConfigSistemaSeguro(conf);
   }
@@ -13355,6 +13380,7 @@ function coletarConfigOnlineSistema(){
 }
 function preencherConfigOnlineSistema(){
   const online=configOnlineSistema();
+  const dadosUsuario=dadosOnlineDoUsuarioAtualSistema();
   const ativo=document.getElementById("onlineAtivoSistema");
   const url=document.getElementById("onlineSupabaseUrl");
   const key=document.getElementById("onlineSupabaseAnonKey");
@@ -13364,8 +13390,8 @@ function preencherConfigOnlineSistema(){
   if(ativo) ativo.checked=!!online.ativo;
   if(url) url.value=online.supabaseUrl || "";
   if(key) key.value=online.supabaseAnonKey || "";
-  if(clinic) clinic.value=online.clinicId || "";
-  if(email) email.value=online.email || "";
+  if(clinic) clinic.value=dadosUsuario.clinicId || online.clinicId || "";
+  if(email) email.value=dadosUsuario.email || online.email || "";
   if(senha) senha.value="";
 }
 function salvarConfigOnlineRapidoSistema(){

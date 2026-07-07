@@ -2920,6 +2920,8 @@ body > #resultadoPacientes{
         <div class="card">
           <h3>Contas a receber</h3>
           <div id="finContasReceber" class="list"></div>
+          <h3 style="margin-top:16px">Contas a pagar</h3>
+          <div id="finContasPagar" class="list"></div>
         </div>
         <div class="card">
           <h3>Faturas e proximas parcelas</h3>
@@ -10140,6 +10142,7 @@ function contasReceberFinanceiroSistema(){
   const itens = [];
   get("financeiroPro").forEach(x=>{
     if(!statusFinanceiroAbertoSistema(x) || statusFinanceiroCanceladoSistema(x)) return;
+    if(String(x.tipo || "entrada").toLowerCase() !== "entrada") return;
     itens.push({
       tipo:"financeiro",
       id:x.id,
@@ -10161,6 +10164,23 @@ function contasReceberFinanceiroSistema(){
       nome:x.paciente || "Paciente",
       descricao:x.procedimento || x.proc || "CobranÃ§a do procedimento",
       valor:aberto
+    });
+  });
+  return itens.sort((a,b)=>String(a.data || "").localeCompare(String(b.data || "")));
+}
+function contasPagarFinanceiroSistema(){
+  const itens = [];
+  get("financeiroPro").forEach(x=>{
+    if(!statusFinanceiroAbertoSistema(x) || statusFinanceiroCanceladoSistema(x)) return;
+    if(String(x.tipo || "").toLowerCase() !== "saida") return;
+    itens.push({
+      tipo:"despesa",
+      id:x.id,
+      data:x.data || hojeFinanceiro(),
+      origem:origemFinanceiroPro(x),
+      nome:x.pagador || x.paciente || "Despesa da clinica",
+      descricao:x.descricao || x.categoria || "Despesa em aberto",
+      valor:numeroFinanceiroSistema(x.valor || 0)
     });
   });
   return itens.sort((a,b)=>String(a.data || "").localeCompare(String(b.data || "")));
@@ -10238,10 +10258,28 @@ function marcarContaReceberComoPagaSistema(tipo,id){
   try{renderCobrancasProntuario();}catch(e){}
   try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
 }
+function marcarContaPagarComoPagaSistema(id){
+  const chave = String(id || "");
+  if(!chave) return;
+  if(!confirm("Marcar esta despesa como paga hoje?")) return;
+  const lista = get("financeiroPro");
+  const idx = lista.findIndex(x=>String(x.id) === chave);
+  if(idx < 0){alert("Despesa nao encontrada.");return;}
+  const valor = numeroFinanceiroSistema(lista[idx].valor || 0);
+  lista[idx] = {...lista[idx],status:"Pago",dataPagamento:hojeFinanceiro(),data:hojeFinanceiro(),valorPago:valor,pago:valor,aberto:0};
+  set("financeiroPro",lista);
+  renderFinanceiroPro();
+  try{sincronizarModuloAposSalvarSistema("financeiro");}catch(e){}
+}
 function itemContaReceberFinanceiroSistema(x){
   const idSeguro = String(x.id || "").replace(/'/g,"\\'");
   const vencida = contaReceberVencidaFinanceiroSistema(x) ? " - Vencida" : "";
   return `<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} - ${textoFinanceiroSeguroSistema(x.data)}${vencida}</small></span><span><strong>${moedaFinanceiro(x.valor)}</strong><br><button class="btn-mini" onclick="marcarContaReceberComoPagaSistema('${x.tipo}','${idSeguro}')">Marcar pago</button></span></div>`;
+}
+function itemContaPagarFinanceiroSistema(x){
+  const idSeguro = String(x.id || "").replace(/'/g,"\\'");
+  const vencida = contaReceberVencidaFinanceiroSistema(x) ? " - Vencida" : "";
+  return `<div class="item"><span><b>${textoFinanceiroSeguroSistema(x.nome)}</b><br>${textoFinanceiroSeguroSistema(x.descricao)}<br><small>${textoFinanceiroSeguroSistema(x.origem)} - ${textoFinanceiroSeguroSistema(x.data)}${vencida}</small></span><span><strong>${moedaFinanceiro(x.valor)}</strong><br><button class="btn-mini" onclick="marcarContaPagarComoPagaSistema('${idSeguro}')">Marcar paga</button></span></div>`;
 }
 function renderResumoAvancadoFinanceiroSistema(){
   const contas = document.getElementById("finContasReceber");
@@ -10252,6 +10290,16 @@ function renderResumoAvancadoFinanceiroSistema(){
       <div class="fin-mini-resumo"><b>Total em aberto:</b> ${moedaFinanceiro(total)}</div>
       ${itens.slice(0,8).map(itemContaReceberFinanceiroSistema).join("")}
     ` : "<div class='item'>Nenhuma conta em aberto.</div>";
+  }
+
+  const contasPagar = document.getElementById("finContasPagar");
+  if(contasPagar){
+    const itens = contasPagarFinanceiroSistema();
+    const total = itens.reduce((s,x)=>s + Number(x.valor || 0),0);
+    contasPagar.innerHTML = itens.length ? `
+      <div class="fin-mini-resumo"><b>Total a pagar:</b> ${moedaFinanceiro(total)}</div>
+      ${itens.slice(0,8).map(itemContaPagarFinanceiroSistema).join("")}
+    ` : "<div class='item'>Nenhuma despesa em aberto.</div>";
   }
 
   const faturas = document.getElementById("finFaturasCartao");

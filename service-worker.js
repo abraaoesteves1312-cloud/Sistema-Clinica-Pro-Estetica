@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v8-20260706-central-online-after-login-fix";
+const CACHE_NAME = "gestao-estetica-pro-app-v9-20260707-financeiro-contas-pagar";
 const CORE_ASSETS = [
   "./",
   "./index.html",

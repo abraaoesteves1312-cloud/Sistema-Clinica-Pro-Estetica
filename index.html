@@ -13724,6 +13724,75 @@ function resumoPlanoLocalClienteSistema(mensagem="Plano online ainda não consul
     mensagem
   };
 }
+function clinicIdLocalPlanoSistema(){
+  const usuario=usuarioAtualSistema() || {};
+  const conf=configSistemaSeguro();
+  const online=conf.online || {};
+  return String(usuario.onlineClinicId || usuario.clinicId || online.clinicId || "").trim();
+}
+function salvarNomeClinicaLocalPlanoSistema(nomeClinica){
+  const nome=String(nomeClinica || "").trim();
+  if(!nome) return;
+  const conf=configSistemaSeguro();
+  conf.clinica=nome;
+  conf.online=conf.online || {};
+  conf.online.clinicName=nome;
+  salvarConfigSistemaSeguro(conf);
+  const usuarioAtual=usuarioAtualSistema();
+  if(usuarioAtual && !usuarioSuperadminSistema(usuarioAtual)){
+    usuarioAtual.onlineClinicName=nome;
+    usuarioAtual.clinicName=nome;
+    definirUsuarioAtualSistema(usuarioAtual);
+  }
+  const clinicaLogada=document.getElementById("clinicaLogada");
+  if(clinicaLogada && usuarioAtual) clinicaLogada.innerText=nome+" — "+(usuarioAtual.nome || usuarioAtual.email || "");
+}
+async function carregarPlanoPorClinicIdLocalSistema(db,mensagemSemSessao){
+  const clinicId=clinicIdLocalPlanoSistema();
+  if(!db || !clinicId) return false;
+  try{
+    const clinicaResp=await consultaOnlineComTempoSistema(
+      db.from("clinics").select("name").eq("id",clinicId).maybeSingle(),
+      "Consulta da clínica local",
+      20
+    );
+    if(clinicaResp.error) throw clinicaResp.error;
+    const nomeClinica=clinicaResp.data?.name || nomeClinicaResumoPlanoSistema();
+    salvarNomeClinicaLocalPlanoSistema(nomeClinica);
+    const assinaturaResp=await consultaOnlineComTempoSistema(
+      db.from("clinic_subscriptions")
+        .select("id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
+        .eq("clinic_id",clinicId)
+        .maybeSingle(),
+      "Consulta da assinatura local",
+      20
+    );
+    if(assinaturaResp.error){
+      atualizarPainelPlanoComercialSistema({
+        ...resumoPlanoLocalClienteSistema(mensagemSemSessao || "Clínica reconhecida. Entre novamente para consultar a assinatura completa."),
+        clinica:nomeClinica
+      });
+      return true;
+    }
+    const assinatura=assinaturaResp.data || {};
+    const planoLigado=Array.isArray(assinatura.commercial_plans) ? assinatura.commercial_plans[0] : assinatura.commercial_plans;
+    const regraPlano=avaliarAcessoPlanoComercialSistema(assinatura);
+    atualizarPainelPlanoComercialSistema({
+      clinica:nomeClinica,
+      plano:planoLigado?.name || "Sem plano definido",
+      ciclo:assinatura.billing_cycle,
+      status:assinatura.status || "active",
+      bloqueado:regraPlano.bloqueado,
+      alerta:regraPlano.alerta,
+      mensagem:assinatura.id ? regraPlano.mensagem : (mensagemSemSessao || "Clínica reconhecida. Assinatura ainda não consultada completamente.")
+    });
+    if(assinatura.id) aplicarBloqueioPlanoComercialSistema(regraPlano,{clinica:nomeClinica,plano:planoLigado?.name});
+    return true;
+  }catch(e){
+    console.warn("Consulta do plano por clinic_id local:",e);
+    return false;
+  }
+}
 function dataPlanoValidaAteSistema(valor){
   if(!valor) return null;
   const data=new Date(valor);
@@ -13901,6 +13970,8 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const sessao=sessaoResp?.data?.session;
     if(!sessao){
       removerBloqueioPlanoComercialSistema();
+      const carregouLocal=await carregarPlanoPorClinicIdLocalSistema(db,"Clínica reconhecida. Entre novamente para conferir a assinatura completa.");
+      if(carregouLocal) return true;
       atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Entre com o e-mail e senha da clínica para consultar a assinatura online."));
       return false;
     }
@@ -13935,17 +14006,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     );
     if(clinicaResp.error) throw clinicaResp.error;
     const nomeClinica=clinicaResp.data?.name || configSistemaSeguro().clinica || "Clínica online";
-    conf.clinica=nomeClinica;
-    conf.online.clinicName=nomeClinica;
-    salvarConfigSistemaSeguro(conf);
-    const usuarioAtual=usuarioAtualSistema();
-    if(usuarioAtual && !usuarioSuperadminSistema(usuarioAtual)){
-      usuarioAtual.onlineClinicName=nomeClinica;
-      usuarioAtual.clinicName=nomeClinica;
-      definirUsuarioAtualSistema(usuarioAtual);
-    }
-    const clinicaLogada=document.getElementById("clinicaLogada");
-    if(clinicaLogada && usuarioAtual) clinicaLogada.innerText=nomeClinica+" — "+(usuarioAtual.nome || usuarioAtual.email || "");
+    salvarNomeClinicaLocalPlanoSistema(nomeClinica);
 
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")

@@ -3510,32 +3510,8 @@ function entrarRapido(){
 }
 async function sairSistema(){
   await limparSessaoAtualSemFecharAppSistema();
-  resetarTelaSessaoSistema();
   app.classList.remove("active");
   loginPage.style.display="block";
-}
-function limparTelaConfiguracoesSessaoSistema(){
-  const tela=document.getElementById("configuracoes");
-  if(!tela) return;
-  tela.classList.remove("active");
-  tela.innerHTML="";
-}
-function mostrarInicioSessaoSistema(){
-  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
-  const inicio=document.getElementById("dashboard");
-  if(inicio) inicio.classList.add("active");
-  document.querySelectorAll(".nav button").forEach(btn=>btn.classList.remove("active"));
-  const botaoInicio=[...document.querySelectorAll(".nav button")].find(btn=>{
-    const acao=btn.getAttribute("onclick") || "";
-    return acao.includes("'dashboard'") || acao.includes('"dashboard"');
-  });
-  if(botaoInicio) botaoInicio.classList.add("active");
-  const titulo=document.getElementById("tituloTela");
-  if(titulo) titulo.innerText=botaoInicio ? botaoInicio.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim() : "Inicio";
-}
-function resetarTelaSessaoSistema(){
-  limparTelaConfiguracoesSessaoSistema();
-  mostrarInicioSessaoSistema();
 }
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
@@ -13170,7 +13146,6 @@ window.entrarSistema = async function(){
   const clinicaLogada=document.getElementById("clinicaLogada");
   if(loginPage) loginPage.style.display="none";
   if(app) app.classList.add("active");
-  resetarTelaSessaoSistema();
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}

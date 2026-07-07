@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v18-20260707-login-online-obrigatorio";
+const CACHE_NAME = "gestao-estetica-pro-app-v19-20260707-modo-local-explicito";
 const CORE_ASSETS = [
   "./",
   "./index.html",

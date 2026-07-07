@@ -3403,6 +3403,10 @@ function definirUsuarioAtualSistema(usuario){
   if(!Array.isArray(u.acessos)) u.acessos=acessosPerfilSistema(u.perfil);
   if(!u.acessos.includes("dashboard")) u.acessos.push("dashboard");
   window.usuarioLogadoSistema=u;
+  window.currentUser=u;
+  window.currentClinicId=u.onlineClinicId || "";
+  window.currentProfile=u.currentProfile || u.profile || u.perfilOriginal || u.perfil || "";
+  window.sessionMode=u.sessionMode || (u.onlineAuth ? "online" : "local");
   sessionStorage.setItem("gepV2_usuarioLogado",JSON.stringify(u));
   atualizarUsuarioTopoSistema();
 }
@@ -13072,11 +13076,18 @@ function prepararLoginProfissional(){
     const aviso=document.getElementById("loginAvisoProfissional");
     if(aviso) aviso.innerText=modoComercial ? "Entre com o e-mail e senha da sua clínica." : "Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.";
   }
+  if(modoComercial && !document.getElementById("btnEntrarModoLocalSistema")){
+    form.insertAdjacentHTML("beforeend",`<button id="btnEntrarModoLocalSistema" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="entrarSistemaModoLocal()">Entrar em modo local</button><div id="avisoModoLocalSistema" class="msg" style="font-size:12px">Use somente para acessar dados salvos neste aparelho. Este modo não consulta plano, assinatura ou Supabase.</div>`);
+  }
   if(!modoComercial && !document.getElementById("btnRecuperarAcessoLocal")){
     form.insertAdjacentHTML("beforeend",`<button id="btnRecuperarAcessoLocal" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="redefinirAcessoAdministradorLocal()">Recuperar acesso local</button><div class="msg" style="font-size:12px">Use este botão somente se o e-mail/senha não entrarem. Ele recria o administrador deste computador sem apagar pacientes, prontuários ou financeiro.</div>`);
   }
   const recuperar=document.getElementById("btnRecuperarAcessoLocal");
   if(recuperar) recuperar.style.display=modoComercial ? "none" : "";
+  const local=document.getElementById("btnEntrarModoLocalSistema");
+  if(local) local.style.display=modoComercial ? "" : "none";
+  const avisoLocal=document.getElementById("avisoModoLocalSistema");
+  if(avisoLocal) avisoLocal.style.display=modoComercial ? "" : "none";
 }
 function usuarioConfigValidoLocal(u){
   return !!(u && String(u.email || "").trim() && (u.senhaHash || u.senha));
@@ -13154,16 +13165,22 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   conf.online.email=email;
   conf.online.senha="";
   const usuario={
+    user_id:sessao.user.id,
+    supabaseUserId:sessao.user.id,
     nome:perfil.full_name || sessao.user.user_metadata?.full_name || email,
     email,
     role:perfil.role || perfilNormalizado,
     perfilOriginal:perfil.role || perfilNormalizado,
     perfil:perfilNormalizado,
+    currentProfile:perfil.role || perfilNormalizado,
     superadmin,
     isSuperadmin:superadmin,
     onlineClinicId:perfil.clinic_id || "",
+    currentClinicId:perfil.clinic_id || "",
     onlineClinicName:nomeClinica,
     clinicName:nomeClinica,
+    sessionMode:"online",
+    onlineAuth:true,
     acessos:acessosPerfilSistema(perfilNormalizado),
     ativo:true,
     senhaHash:await senhaHashSistemaProfissional(email,senha)
@@ -13257,6 +13274,36 @@ window.entrarSistema = async function(){
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   atualizarTudo();
+};
+window.entrarSistemaModoLocal = async function(){
+  prepararLoginProfissional();
+  const email=(document.getElementById("emailLogin")?.value || "").trim().toLowerCase();
+  const senha=document.getElementById("senhaLogin")?.value || "";
+  if(!email || !senha){
+    mensagemLoginProfissional("Informe e-mail e senha para acessar em modo local.");
+    return;
+  }
+  try{
+    const db=clienteSupabaseSistema();
+    if(db && db.auth) await db.auth.signOut();
+  }catch(e){}
+  const usuario=await autenticarUsuarioConfigLocal(email,senha);
+  if(!usuario){
+    mensagemLoginProfissional("Senha local não encontrada neste aparelho.");
+    return;
+  }
+  const usuarioLocal={...usuario,sessionMode:"local",onlineAuth:false};
+  definirUsuarioAtualSistema({...usuarioLocal,perfil:perfilUsuarioSistema(usuarioLocal),acessos:usuarioLocal.acessos || acessosPerfilSistema(usuarioLocal.perfil)});
+  try{limparClinicaOnlineLocalSistema();}catch(e){}
+  const loginPage=document.getElementById("loginPage");
+  const app=document.getElementById("app");
+  const clinicaLogada=document.getElementById("clinicaLogada");
+  if(loginPage) loginPage.style.display="none";
+  if(app) app.classList.add("active");
+  if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuarioLocal.nome || usuarioLocal.email)+" (local)";
+  aplicarPermissoesUsuarioAtual();
+  atualizarTudo();
+  mensagemLoginProfissional("Modo local aberto. Para consultar plano e assinatura, saia e entre pelo botão Entrar.");
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13405,6 +13452,7 @@ function usuarioSessaoAtualSistema(){
 function dadosOnlineDoUsuarioAtualSistema(){
   const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
   if(!sessao || usuarioSuperadminSistema(sessao)) return {email:"",clinicId:""};
+  if(sessao.sessionMode==="local" || sessao.onlineAuth===false) return {email:"",clinicId:""};
   const email=emailNormalizadoSistema(sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail);
   const clinicId=String(sessao.onlineClinicId || "").trim();
   return {email,clinicId};
@@ -13574,6 +13622,12 @@ async function limparSessaoAtualSemFecharAppSistema(){
   window.__clienteSupabaseChave="";
   window.__clinicScopeSistema="";
   window.usuarioLogadoSistema=null;
+  window.currentUser=null;
+  window.currentClinicId="";
+  window.currentProfile=null;
+  window.sessionMode="";
+  window.clinicSettings=null;
+  window.__ultimoErroLoginOnlineSistema="";
   removerBloqueioPlanoComercialSistema();
   sessionStorage.removeItem("gepV2_usuarioLogado");
   limparEscopoClinicaSistema();

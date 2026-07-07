@@ -13065,12 +13065,18 @@ function prepararLoginProfissional(){
   const formTeste=document.getElementById("formTeste");
   if(tabTeste) tabTeste.style.display="none";
   if(formTeste) formTeste.style.display="none";
+  const modoComercial=typeof chaveSupabaseComercialSistema==="function" && !!chaveSupabaseComercialSistema();
   if(!document.getElementById("loginAvisoProfissional")){
-    form.insertAdjacentHTML("afterbegin",`<div id="loginAvisoProfissional" class="msg" style="margin-bottom:12px;text-align:left">Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.</div>`);
+    form.insertAdjacentHTML("afterbegin",`<div id="loginAvisoProfissional" class="msg" style="margin-bottom:12px;text-align:left">${modoComercial ? "Entre com o e-mail e senha da sua clínica." : "Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador."}</div>`);
+  }else{
+    const aviso=document.getElementById("loginAvisoProfissional");
+    if(aviso) aviso.innerText=modoComercial ? "Entre com o e-mail e senha da sua clínica." : "Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.";
   }
-  if(!document.getElementById("btnRecuperarAcessoLocal")){
+  if(!modoComercial && !document.getElementById("btnRecuperarAcessoLocal")){
     form.insertAdjacentHTML("beforeend",`<button id="btnRecuperarAcessoLocal" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="redefinirAcessoAdministradorLocal()">Recuperar acesso local</button><div class="msg" style="font-size:12px">Use este botão somente se o e-mail/senha não entrarem. Ele recria o administrador deste computador sem apagar pacientes, prontuários ou financeiro.</div>`);
   }
+  const recuperar=document.getElementById("btnRecuperarAcessoLocal");
+  if(recuperar) recuperar.style.display=modoComercial ? "none" : "";
 }
 function usuarioConfigValidoLocal(u){
   return !!(u && String(u.email || "").trim() && (u.senhaHash || u.senha));
@@ -13202,14 +13208,14 @@ window.entrarSistema = async function(){
   }catch(e){
     console.warn("Login online falhou, tentando acesso local:",e);
   }
-  if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
+  if(!usuario && !existeUsuarioConfigValidoLocal(conf) && !chaveSupabaseComercialSistema()){
     usuario=await criarPrimeiroAdministradorLocal(email,senha);
     mensagemLoginProfissional("Administrador criado com sucesso.");
   }else if(!usuario){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
   if(!usuario){
-    mensagemLoginProfissional("E-mail ou senha inválidos.");
+    mensagemLoginProfissional(chaveSupabaseComercialSistema() ? "E-mail ou senha inválidos, ou usuário sem clínica ativa no sistema." : "E-mail ou senha inválidos.");
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
@@ -13359,7 +13365,7 @@ window.salvarConfig = salvarConfigUsuariosSeguroSistema;
 const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtgduftzxaw.supabase.co";
 const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtgduftzxaw";
 const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="jyjqhuwmcmtgduftzxaw";
-const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="";
+const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="sb_publishable_hVHPWhVjjd4U51HFpE153g_xUCTo-jg";
 
 function chaveSupabaseComercialSistema(){
   return limparChaveSupabaseSistema(SUPABASE_ANON_KEY_COMERCIAL_SISTEMA);

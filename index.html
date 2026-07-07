@@ -13140,6 +13140,7 @@ window.entrarSistema = async function(){
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
   definirUsuarioAtualSistema({...usuario,perfil:perfilUsuarioSistema(usuario),acessos:usuario.acessos || acessosPerfilSistema(usuario.perfil)});
+  try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){console.warn("Fixacao da Central Online apos login:",e);}
   const loginPage=document.getElementById("loginPage");
   const app=document.getElementById("app");
   const clinicaLogada=document.getElementById("clinicaLogada");
@@ -13147,8 +13148,9 @@ window.entrarSistema = async function(){
   if(app) app.classList.add("active");
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
-  atualizarTudo();
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
+  try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
+  atualizarTudo();
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13393,6 +13395,25 @@ function preencherConfigOnlineSistema(){
   if(clinic) clinic.value=dadosUsuario.clinicId || online.clinicId || "";
   if(email) email.value=dadosUsuario.email || online.email || "";
   if(senha) senha.value="";
+}
+function fixarCentralOnlineNoUsuarioAtualSistema(){
+  const dadosUsuario=dadosOnlineDoUsuarioAtualSistema();
+  if(!dadosUsuario.email && !dadosUsuario.clinicId) return;
+  const conf=configSistemaSeguro();
+  conf.online=conf.online || {};
+  conf.online.ativo=typeof conf.online.ativo==="boolean" ? conf.online.ativo : true;
+  conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
+  if(chaveSupabaseComercialSistema()) conf.online.supabaseAnonKey=chaveSupabaseComercialSistema();
+  if(dadosUsuario.clinicId) conf.online.clinicId=dadosUsuario.clinicId;
+  if(dadosUsuario.email) conf.online.email=dadosUsuario.email;
+  conf.online.senha="";
+  salvarConfigSistemaSeguro(conf);
+  const campoClinic=document.getElementById("onlineClinicId");
+  const campoEmail=document.getElementById("onlineEmailSistema");
+  const campoSenha=document.getElementById("onlineSenhaSistema");
+  if(campoClinic) campoClinic.value=dadosUsuario.clinicId || conf.online.clinicId || "";
+  if(campoEmail) campoEmail.value=dadosUsuario.email || conf.online.email || "";
+  if(campoSenha) campoSenha.value="";
 }
 function salvarConfigOnlineRapidoSistema(){
   const conf=configSistemaSeguro();
@@ -15639,6 +15660,7 @@ const renderConfigBaseProfissional = window.renderConfig;
 window.renderConfig = function(){
   renderConfigBaseProfissional();
   inserirPainelPreparacaoOnlineConfig();
+  try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   try{preencherConfigOnlineSistema();}catch(e){}
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();

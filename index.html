@@ -15684,6 +15684,13 @@ function inserirPainelPreparacaoOnlineConfig(){
   else tela.insertAdjacentHTML("beforeend",html);
   preencherConfigOnlineSistema();
 }
+function aplicarModoClienteCentralOnlineSistema(){
+  const painel=document.getElementById("painelPreparacaoOnline");
+  if(!painel) return;
+  const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
+  painel.style.display=superadmin ? "" : "none";
+  painel.setAttribute("data-visibilidade",superadmin ? "superadmin" : "cliente");
+}
 function destacarCadastroFuncionariosConfig(){
   const tela=document.querySelector("#configuracoes .box");
   const lista=document.getElementById("configUsuariosLista");
@@ -15736,6 +15743,7 @@ window.renderConfig = function(){
   inserirPainelPreparacaoOnlineConfig();
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   try{preencherConfigOnlineSistema();}catch(e){}
+  try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
@@ -15835,6 +15843,7 @@ window.renderConfig = function(){
   renderConfigBaseLimpeza();
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
+  try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
   try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);

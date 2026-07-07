@@ -3403,10 +3403,6 @@ function definirUsuarioAtualSistema(usuario){
   if(!Array.isArray(u.acessos)) u.acessos=acessosPerfilSistema(u.perfil);
   if(!u.acessos.includes("dashboard")) u.acessos.push("dashboard");
   window.usuarioLogadoSistema=u;
-  window.currentUser=u;
-  window.currentClinicId=u.onlineClinicId || "";
-  window.currentProfile=u.currentProfile || u.profile || u.perfilOriginal || u.perfil || "";
-  window.sessionMode=u.sessionMode || (u.onlineAuth ? "online" : "local");
   sessionStorage.setItem("gepV2_usuarioLogado",JSON.stringify(u));
   atualizarUsuarioTopoSistema();
 }
@@ -13069,25 +13065,12 @@ function prepararLoginProfissional(){
   const formTeste=document.getElementById("formTeste");
   if(tabTeste) tabTeste.style.display="none";
   if(formTeste) formTeste.style.display="none";
-  const modoComercial=typeof chaveSupabaseComercialSistema==="function" && !!chaveSupabaseComercialSistema();
   if(!document.getElementById("loginAvisoProfissional")){
-    form.insertAdjacentHTML("afterbegin",`<div id="loginAvisoProfissional" class="msg" style="margin-bottom:12px;text-align:left">${modoComercial ? "Entre com o e-mail e senha da sua clínica." : "Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador."}</div>`);
-  }else{
-    const aviso=document.getElementById("loginAvisoProfissional");
-    if(aviso) aviso.innerText=modoComercial ? "Entre com o e-mail e senha da sua clínica." : "Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.";
+    form.insertAdjacentHTML("afterbegin",`<div id="loginAvisoProfissional" class="msg" style="margin-bottom:12px;text-align:left">Acesso profissional local. No primeiro uso, informe um e-mail e uma senha para criar o administrador deste computador.</div>`);
   }
-  if(modoComercial && !document.getElementById("btnEntrarModoLocalSistema")){
-    form.insertAdjacentHTML("beforeend",`<button id="btnEntrarModoLocalSistema" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="entrarSistemaModoLocal()">Entrar em modo local</button><div id="avisoModoLocalSistema" class="msg" style="font-size:12px">Use somente para acessar dados salvos neste aparelho. Este modo não consulta plano, assinatura ou Supabase.</div>`);
-  }
-  if(!modoComercial && !document.getElementById("btnRecuperarAcessoLocal")){
+  if(!document.getElementById("btnRecuperarAcessoLocal")){
     form.insertAdjacentHTML("beforeend",`<button id="btnRecuperarAcessoLocal" class="btn-light" style="width:100%;margin-top:9px" type="button" onclick="redefinirAcessoAdministradorLocal()">Recuperar acesso local</button><div class="msg" style="font-size:12px">Use este botão somente se o e-mail/senha não entrarem. Ele recria o administrador deste computador sem apagar pacientes, prontuários ou financeiro.</div>`);
   }
-  const recuperar=document.getElementById("btnRecuperarAcessoLocal");
-  if(recuperar) recuperar.style.display=modoComercial ? "none" : "";
-  const local=document.getElementById("btnEntrarModoLocalSistema");
-  if(local) local.style.display=modoComercial ? "" : "none";
-  const avisoLocal=document.getElementById("avisoModoLocalSistema");
-  if(avisoLocal) avisoLocal.style.display=modoComercial ? "" : "none";
 }
 function usuarioConfigValidoLocal(u){
   return !!(u && String(u.email || "").trim() && (u.senhaHash || u.senha));
@@ -13115,11 +13098,7 @@ async function autenticarUsuarioConfigLocal(email,senha){
 }
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
-  window.__ultimoErroLoginOnlineSistema="";
-  if(!db){
-    window.__ultimoErroLoginOnlineSistema="Não foi possível iniciar a conexão online.";
-    return null;
-  }
+  if(!db) return null;
   try{
     const sessaoAtual=await db.auth.getSession();
     const emailAtual=emailNormalizadoSistema(sessaoAtual?.data?.session?.user?.email || "");
@@ -13130,21 +13109,12 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     console.warn("Conferencia de sessao antes do login online:",e);
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
-  if(login.error){
-    window.__ultimoErroLoginOnlineSistema=login.error.message || "Não foi possível entrar online.";
-    return null;
-  }
+  if(login.error) return null;
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
-  if(!sessao?.user?.id){
-    window.__ultimoErroLoginOnlineSistema="Sessão online não foi criada.";
-    return null;
-  }
+  if(!sessao?.user?.id) return null;
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
-  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false){
-    window.__ultimoErroLoginOnlineSistema="Usuário sem clínica ativa no sistema.";
-    return null;
-  }
+  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
   const perfil=perfilResp.data;
   if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
   let nomeClinica="Clínica online";
@@ -13161,26 +13131,17 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
   if(chaveSupabaseComercialSistema()) conf.online.supabaseAnonKey=chaveSupabaseComercialSistema();
   conf.online.clinicId=perfil.clinic_id || "";
-  conf.online.clinicName=nomeClinica;
   conf.online.email=email;
   conf.online.senha="";
   const usuario={
-    user_id:sessao.user.id,
-    supabaseUserId:sessao.user.id,
     nome:perfil.full_name || sessao.user.user_metadata?.full_name || email,
     email,
     role:perfil.role || perfilNormalizado,
     perfilOriginal:perfil.role || perfilNormalizado,
     perfil:perfilNormalizado,
-    currentProfile:perfil.role || perfilNormalizado,
     superadmin,
     isSuperadmin:superadmin,
     onlineClinicId:perfil.clinic_id || "",
-    currentClinicId:perfil.clinic_id || "",
-    onlineClinicName:nomeClinica,
-    clinicName:nomeClinica,
-    sessionMode:"online",
-    onlineAuth:true,
     acessos:acessosPerfilSistema(perfilNormalizado),
     ativo:true,
     senhaHash:await senhaHashSistemaProfissional(email,senha)
@@ -13236,29 +13197,19 @@ window.entrarSistema = async function(){
   }
   let usuario=null;
   const conf=configSistemaSeguro();
-  const modoComercial=!!chaveSupabaseComercialSistema();
   try{
     usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }catch(e){
     console.warn("Login online falhou, tentando acesso local:",e);
-    window.__ultimoErroLoginOnlineSistema=e?.message || "Falha no login online.";
   }
-  if(!usuario && modoComercial){
-    const usuarioLocal=await autenticarUsuarioConfigLocal(email,senha);
-    if(usuarioLocal && usuarioSuperadminSistema(usuarioLocal)){
-      usuario=usuarioLocal;
-    }else{
-      mensagemLoginProfissional("Não foi possível entrar online. Confira e-mail, senha, conexão e se o usuário está ativo na clínica.");
-      return;
-    }
-  }else if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
+  if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
     usuario=await criarPrimeiroAdministradorLocal(email,senha);
     mensagemLoginProfissional("Administrador criado com sucesso.");
   }else if(!usuario){
     usuario=await autenticarUsuarioConfigLocal(email,senha);
   }
   if(!usuario){
-    mensagemLoginProfissional(chaveSupabaseComercialSistema() ? "E-mail ou senha inválidos, ou usuário sem clínica ativa no sistema." : "E-mail ou senha inválidos.");
+    mensagemLoginProfissional("E-mail ou senha inválidos.");
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
@@ -13274,36 +13225,6 @@ window.entrarSistema = async function(){
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   atualizarTudo();
-};
-window.entrarSistemaModoLocal = async function(){
-  prepararLoginProfissional();
-  const email=(document.getElementById("emailLogin")?.value || "").trim().toLowerCase();
-  const senha=document.getElementById("senhaLogin")?.value || "";
-  if(!email || !senha){
-    mensagemLoginProfissional("Informe e-mail e senha para acessar em modo local.");
-    return;
-  }
-  try{
-    const db=clienteSupabaseSistema();
-    if(db && db.auth) await db.auth.signOut();
-  }catch(e){}
-  const usuario=await autenticarUsuarioConfigLocal(email,senha);
-  if(!usuario){
-    mensagemLoginProfissional("Senha local não encontrada neste aparelho.");
-    return;
-  }
-  const usuarioLocal={...usuario,sessionMode:"local",onlineAuth:false};
-  definirUsuarioAtualSistema({...usuarioLocal,perfil:perfilUsuarioSistema(usuarioLocal),acessos:usuarioLocal.acessos || acessosPerfilSistema(usuarioLocal.perfil)});
-  try{limparClinicaOnlineLocalSistema();}catch(e){}
-  const loginPage=document.getElementById("loginPage");
-  const app=document.getElementById("app");
-  const clinicaLogada=document.getElementById("clinicaLogada");
-  if(loginPage) loginPage.style.display="none";
-  if(app) app.classList.add("active");
-  if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuarioLocal.nome || usuarioLocal.email)+" (local)";
-  aplicarPermissoesUsuarioAtual();
-  atualizarTudo();
-  mensagemLoginProfissional("Modo local aberto. Para consultar plano e assinatura, saia e entre pelo botão Entrar.");
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13438,7 +13359,7 @@ window.salvarConfig = salvarConfigUsuariosSeguroSistema;
 const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtgduftzxaw.supabase.co";
 const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtgduftzxaw";
 const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="jyjqhuwmcmtgduftzxaw";
-const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="sb_publishable_hVHPWhVjjd4U51HFpE153g_xUCTo-jg";
+const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="";
 
 function chaveSupabaseComercialSistema(){
   return limparChaveSupabaseSistema(SUPABASE_ANON_KEY_COMERCIAL_SISTEMA);
@@ -13452,7 +13373,6 @@ function usuarioSessaoAtualSistema(){
 function dadosOnlineDoUsuarioAtualSistema(){
   const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
   if(!sessao || usuarioSuperadminSistema(sessao)) return {email:"",clinicId:""};
-  if(sessao.sessionMode==="local" || sessao.onlineAuth===false) return {email:"",clinicId:""};
   const email=emailNormalizadoSistema(sessao.email || sessao.login || sessao.emailAcesso || sessao.userEmail);
   const clinicId=String(sessao.onlineClinicId || "").trim();
   return {email,clinicId};
@@ -13530,7 +13450,6 @@ function coletarConfigOnlineSistema(){
     supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA),
     supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || chaveSupabaseComercialSistema()),
     clinicId:(document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim(),
-    clinicName:anterior.clinicName || configSistemaSeguro().online?.clinicName || "",
     email:(document.getElementById("onlineEmailSistema")?.value || anterior.email || "").trim().toLowerCase(),
     senha:""
   });
@@ -13595,14 +13514,7 @@ function clienteSupabaseSistema(){
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
   window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
-  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey,{
-    auth:{
-      persistSession:true,
-      autoRefreshToken:true,
-      detectSessionInUrl:false,
-      storageKey:"gep_supabase_auth_comercial"
-    }
-  });
+  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey);
   return window.__clienteSupabaseSistema;
 }
 async function limparSessaoAtualSemFecharAppSistema(){
@@ -13622,12 +13534,6 @@ async function limparSessaoAtualSemFecharAppSistema(){
   window.__clienteSupabaseChave="";
   window.__clinicScopeSistema="";
   window.usuarioLogadoSistema=null;
-  window.currentUser=null;
-  window.currentClinicId="";
-  window.currentProfile=null;
-  window.sessionMode="";
-  window.clinicSettings=null;
-  window.__ultimoErroLoginOnlineSistema="";
   removerBloqueioPlanoComercialSistema();
   sessionStorage.removeItem("gepV2_usuarioLogado");
   limparEscopoClinicaSistema();
@@ -13790,93 +13696,6 @@ function rotuloStatusPlanoSistema(valor){
   };
   return status[String(valor || "").toLowerCase()] || "Preparação";
 }
-function nomeClinicaResumoPlanoSistema(){
-  const usuario=usuarioAtualSistema() || {};
-  const conf=configSistemaSeguro();
-  const online=conf.online || {};
-  return textoPlanoComercialSistema(
-    usuario.onlineClinicName || usuario.clinicName || online.clinicName || conf.clinica,
-    "Clínica"
-  );
-}
-function resumoPlanoLocalClienteSistema(mensagem="Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."){
-  return {
-    clinica:nomeClinicaResumoPlanoSistema(),
-    plano:"Não consultado",
-    ciclo:"",
-    status:"active",
-    mensagem
-  };
-}
-function clinicIdLocalPlanoSistema(){
-  const usuario=usuarioAtualSistema() || {};
-  const conf=configSistemaSeguro();
-  const online=conf.online || {};
-  return String(usuario.onlineClinicId || usuario.clinicId || online.clinicId || "").trim();
-}
-function salvarNomeClinicaLocalPlanoSistema(nomeClinica){
-  const nome=String(nomeClinica || "").trim();
-  if(!nome) return;
-  const conf=configSistemaSeguro();
-  conf.clinica=nome;
-  conf.online=conf.online || {};
-  conf.online.clinicName=nome;
-  salvarConfigSistemaSeguro(conf);
-  const usuarioAtual=usuarioAtualSistema();
-  if(usuarioAtual && !usuarioSuperadminSistema(usuarioAtual)){
-    usuarioAtual.onlineClinicName=nome;
-    usuarioAtual.clinicName=nome;
-    definirUsuarioAtualSistema(usuarioAtual);
-  }
-  const clinicaLogada=document.getElementById("clinicaLogada");
-  if(clinicaLogada && usuarioAtual) clinicaLogada.innerText=nome+" — "+(usuarioAtual.nome || usuarioAtual.email || "");
-}
-async function carregarPlanoPorClinicIdLocalSistema(db,mensagemSemSessao){
-  const clinicId=clinicIdLocalPlanoSistema();
-  if(!db || !clinicId) return false;
-  try{
-    const clinicaResp=await consultaOnlineComTempoSistema(
-      db.from("clinics").select("name").eq("id",clinicId).maybeSingle(),
-      "Consulta da clínica local",
-      20
-    );
-    if(clinicaResp.error) throw clinicaResp.error;
-    const nomeClinica=clinicaResp.data?.name || nomeClinicaResumoPlanoSistema();
-    salvarNomeClinicaLocalPlanoSistema(nomeClinica);
-    const assinaturaResp=await consultaOnlineComTempoSistema(
-      db.from("clinic_subscriptions")
-        .select("id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
-        .eq("clinic_id",clinicId)
-        .maybeSingle(),
-      "Consulta da assinatura local",
-      20
-    );
-    if(assinaturaResp.error){
-      atualizarPainelPlanoComercialSistema({
-        ...resumoPlanoLocalClienteSistema(mensagemSemSessao || "Clínica reconhecida. Entre novamente para consultar a assinatura completa."),
-        clinica:nomeClinica
-      });
-      return true;
-    }
-    const assinatura=assinaturaResp.data || {};
-    const planoLigado=Array.isArray(assinatura.commercial_plans) ? assinatura.commercial_plans[0] : assinatura.commercial_plans;
-    const regraPlano=avaliarAcessoPlanoComercialSistema(assinatura);
-    atualizarPainelPlanoComercialSistema({
-      clinica:nomeClinica,
-      plano:planoLigado?.name || "Sem plano definido",
-      ciclo:assinatura.billing_cycle,
-      status:assinatura.status || "active",
-      bloqueado:regraPlano.bloqueado,
-      alerta:regraPlano.alerta,
-      mensagem:assinatura.id ? regraPlano.mensagem : (mensagemSemSessao || "Clínica reconhecida. Assinatura ainda não consultada completamente.")
-    });
-    if(assinatura.id) aplicarBloqueioPlanoComercialSistema(regraPlano,{clinica:nomeClinica,plano:planoLigado?.name});
-    return true;
-  }catch(e){
-    console.warn("Consulta do plano por clinic_id local:",e);
-    return false;
-  }
-}
 function dataPlanoValidaAteSistema(valor){
   if(!valor) return null;
   const data=new Date(valor);
@@ -14029,23 +13848,12 @@ function atualizarPainelPlanoComercialSistema(dados={}){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
   }
 }
-function aplicarVisibilidadePlanoClienteSistema(){
-  const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
-  const adminPlano=document.getElementById("planoAdminClinicaSistema");
-  if(adminPlano){
-    adminPlano.style.display=superadmin ? "" : "none";
-    adminPlano.setAttribute("aria-hidden",superadmin ? "false" : "true");
-  }
-  const painelPlano=document.getElementById("painelPlanoAssinaturaSistema");
-  if(painelPlano) painelPlano.setAttribute("data-visibilidade",superadmin ? "superadmin" : "cliente");
-}
 async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("planoAssinaturaMensagemSistema");
-  aplicarVisibilidadePlanoClienteSistema();
   if(!db){
     removerBloqueioPlanoComercialSistema();
-    atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."));
+    atualizarPainelPlanoComercialSistema({mensagem:"Conecte o sistema ao Supabase para consultar o plano da clínica."});
     return false;
   }
   try{
@@ -14054,9 +13862,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const sessao=sessaoResp?.data?.session;
     if(!sessao){
       removerBloqueioPlanoComercialSistema();
-      const carregouLocal=await carregarPlanoPorClinicIdLocalSistema(db,"Clínica reconhecida. Entre novamente para conferir a assinatura completa.");
-      if(carregouLocal) return true;
-      atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Sessão online não encontrada. Saia e entre novamente com o e-mail e senha da clínica."));
+      atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
       return false;
     }
     const perfilResp=await consultaOnlineComTempoSistema(
@@ -14090,7 +13896,6 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     );
     if(clinicaResp.error) throw clinicaResp.error;
     const nomeClinica=clinicaResp.data?.name || configSistemaSeguro().clinica || "Clínica online";
-    salvarNomeClinicaLocalPlanoSistema(nomeClinica);
 
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")
@@ -14104,13 +13909,9 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       const tabelaAusente=/clinic_subscriptions|schema cache|does not exist|relation/i.test(assinaturaResp.error.message || "");
       if(tabelaAusente){
         removerBloqueioPlanoComercialSistema();
-        const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
-        atualizarPainelPlanoComercialSistema(superadmin ? {
+        atualizarPainelPlanoComercialSistema({
           clinica:nomeClinica,
           mensagem:"A clínica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio está ativo."
-        } : {
-          ...resumoPlanoLocalClienteSistema("Acesso liberado. O plano online ainda será conferido pelo administrador do sistema."),
-          clinica:nomeClinica
         });
         return true;
       }
@@ -15883,13 +15684,6 @@ function inserirPainelPreparacaoOnlineConfig(){
   else tela.insertAdjacentHTML("beforeend",html);
   preencherConfigOnlineSistema();
 }
-function aplicarModoClienteCentralOnlineSistema(){
-  const painel=document.getElementById("painelPreparacaoOnline");
-  if(!painel) return;
-  const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
-  painel.style.display=superadmin ? "" : "none";
-  painel.setAttribute("data-visibilidade",superadmin ? "superadmin" : "cliente");
-}
 function destacarCadastroFuncionariosConfig(){
   const tela=document.querySelector("#configuracoes .box");
   const lista=document.getElementById("configUsuariosLista");
@@ -15942,8 +15736,6 @@ window.renderConfig = function(){
   inserirPainelPreparacaoOnlineConfig();
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   try{preencherConfigOnlineSistema();}catch(e){}
-  try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
-  try{aplicarVisibilidadePlanoClienteSistema();}catch(e){}
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
@@ -16043,8 +15835,6 @@ window.renderConfig = function(){
   renderConfigBaseLimpeza();
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
-  try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
-  try{aplicarVisibilidadePlanoClienteSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
   try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);

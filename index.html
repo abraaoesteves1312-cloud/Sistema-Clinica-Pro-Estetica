@@ -10414,6 +10414,9 @@ function resumoFechamentoMensalFinanceiroSistema(mes){
   const periodo = periodoMesFinanceiroSistema(mes);
   const resumo = resumoPeriodoFinanceiroSistema(periodo.inicio,periodo.fim);
   const contasMes = contasReceberFinanceiroSistema().filter(x=>dataNoPeriodoFinanceiroSistema(x.data,periodo.inicio,periodo.fim));
+  const contasPagarMes = contasPagarFinanceiroSistema().filter(x=>dataNoPeriodoFinanceiroSistema(x.data,periodo.inicio,periodo.fim));
+  const despesasAbertas = contasPagarMes.reduce((s,x)=>s + Number(x.valor || 0),0);
+  const despesasVencidas = contasPagarMes.filter(contaReceberVencidaFinanceiroSistema).reduce((s,x)=>s + Number(x.valor || 0),0);
   let futuroAposMes = 0;
   parcelasFinanceiroSistema(get("financeiroPro")).forEach(x=>{
     const data = String(x.data || "").slice(0,10);
@@ -10424,6 +10427,9 @@ function resumoFechamentoMensalFinanceiroSistema(mes){
     ...resumo,
     periodo,
     contasMesQuantidade:contasMes.length,
+    contasPagarMesQuantidade:contasPagarMes.length,
+    despesasAbertas,
+    despesasVencidas,
     futuroAposMes,
     salvo:fechamentoSalvoFinanceiroSistema(periodo.mes)
   };
@@ -10453,6 +10459,8 @@ function renderFechamentoMensalFinanceiroSistema(){
     ${linhaRelatorioFinanceiroSistema("Lucro liquido do mes",fechamento.lucro,"entradas - saidas - taxas")}
     ${linhaRelatorioFinanceiroSistema("Contas abertas do mes",fechamento.aberto,`${fechamento.contasMesQuantidade} pendencia(s). ${alerta}`)}
     ${linhaRelatorioFinanceiroSistema("Contas vencidas do mes",fechamento.vencido,"pendencias anteriores a hoje")}
+    ${linhaRelatorioFinanceiroSistema("Despesas abertas do mes",fechamento.despesasAbertas,`${fechamento.contasPagarMesQuantidade} despesa(s) em aberto`)}
+    ${linhaRelatorioFinanceiroSistema("Despesas vencidas do mes",fechamento.despesasVencidas,"despesas em aberto com data anterior a hoje")}
     ${linhaRelatorioFinanceiroSistema("Recebimentos futuros apos o mes",fechamento.futuroAposMes,"parcelas previstas depois deste fechamento")}
     <div class="fin-mini-resumo"><b>Ultima conferencia:</b> ${textoFinanceiroSeguroSistema(fechamento.salvo?.data || "Ainda nao salva")}</div>
   `;
@@ -10474,7 +10482,10 @@ function salvarFechamentoMensalFinanceiroSistema(){
     taxas:fechamento.taxas,
     lucro:fechamento.lucro,
     aberto:fechamento.aberto,
-    vencido:fechamento.vencido
+    vencido:fechamento.vencido,
+    despesasAbertas:fechamento.despesasAbertas,
+    despesasVencidas:fechamento.despesasVencidas,
+    futuroAposMes:fechamento.futuroAposMes
   };
   const idx = lista.findIndex(x=>String(x.mes) === String(mes));
   if(idx >= 0) lista[idx] = {...lista[idx],...registro};

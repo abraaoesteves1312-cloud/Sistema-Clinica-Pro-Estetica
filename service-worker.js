@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v10-20260707-financeiro-futuros";
+const CACHE_NAME = "gestao-estetica-pro-app-v11-20260707-fechamento-despesas";
 const CORE_ASSETS = [
   "./",
   "./index.html",

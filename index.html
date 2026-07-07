@@ -13849,6 +13849,13 @@ function atualizarPainelPlanoComercialSistema(dados={}){
   }
 }
 async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
+  try{
+    if(document.getElementById("onlineSupabaseUrl") || document.getElementById("onlineSupabaseAnonKey")){
+      salvarConfigOnlineRapidoSistema();
+    }
+  }catch(e){
+    console.warn("Preparacao da conexao do plano:",e);
+  }
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("planoAssinaturaMensagemSistema");
   if(!db){

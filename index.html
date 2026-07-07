@@ -13137,6 +13137,7 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
   if(chaveSupabaseComercialSistema()) conf.online.supabaseAnonKey=chaveSupabaseComercialSistema();
   conf.online.clinicId=perfil.clinic_id || "";
+  conf.online.clinicName=nomeClinica;
   conf.online.email=email;
   conf.online.senha="";
   const usuario={
@@ -13148,6 +13149,8 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     superadmin,
     isSuperadmin:superadmin,
     onlineClinicId:perfil.clinic_id || "",
+    onlineClinicName:nomeClinica,
+    clinicName:nomeClinica,
     acessos:acessosPerfilSistema(perfilNormalizado),
     ativo:true,
     senhaHash:await senhaHashSistemaProfissional(email,senha)
@@ -13456,6 +13459,7 @@ function coletarConfigOnlineSistema(){
     supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA),
     supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || chaveSupabaseComercialSistema()),
     clinicId:(document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim(),
+    clinicName:anterior.clinicName || configSistemaSeguro().online?.clinicName || "",
     email:(document.getElementById("onlineEmailSistema")?.value || anterior.email || "").trim().toLowerCase(),
     senha:""
   });
@@ -13702,10 +13706,18 @@ function rotuloStatusPlanoSistema(valor){
   };
   return status[String(valor || "").toLowerCase()] || "Preparação";
 }
-function resumoPlanoLocalClienteSistema(mensagem="Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."){
+function nomeClinicaResumoPlanoSistema(){
+  const usuario=usuarioAtualSistema() || {};
   const conf=configSistemaSeguro();
+  const online=conf.online || {};
+  return textoPlanoComercialSistema(
+    usuario.onlineClinicName || usuario.clinicName || online.clinicName || conf.clinica,
+    "Clínica"
+  );
+}
+function resumoPlanoLocalClienteSistema(mensagem="Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."){
   return {
-    clinica:conf.clinica || "Clínica",
+    clinica:nomeClinicaResumoPlanoSistema(),
     plano:"Não consultado",
     ciclo:"",
     status:"active",
@@ -13923,6 +13935,17 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     );
     if(clinicaResp.error) throw clinicaResp.error;
     const nomeClinica=clinicaResp.data?.name || configSistemaSeguro().clinica || "Clínica online";
+    conf.clinica=nomeClinica;
+    conf.online.clinicName=nomeClinica;
+    salvarConfigSistemaSeguro(conf);
+    const usuarioAtual=usuarioAtualSistema();
+    if(usuarioAtual && !usuarioSuperadminSistema(usuarioAtual)){
+      usuarioAtual.onlineClinicName=nomeClinica;
+      usuarioAtual.clinicName=nomeClinica;
+      definirUsuarioAtualSistema(usuarioAtual);
+    }
+    const clinicaLogada=document.getElementById("clinicaLogada");
+    if(clinicaLogada && usuarioAtual) clinicaLogada.innerText=nomeClinica+" — "+(usuarioAtual.nome || usuarioAtual.email || "");
 
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")

@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v15-20260707-plano-cliente";
+const CACHE_NAME = "gestao-estetica-pro-app-v16-20260707-nome-plano-clinica";
 const CORE_ASSETS = [
   "./",
   "./index.html",

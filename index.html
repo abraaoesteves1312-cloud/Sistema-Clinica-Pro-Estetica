@@ -10331,8 +10331,9 @@ function resumoPeriodoFinanceiroSistema(inicio, fim){
   parcelasFinanceiroSistema(get("financeiroPro")).forEach(x=>{
     const data = String(x.data || "").slice(0,10);
     const noPeriodo = dataNoPeriodoFinanceiroSistema(data,inicio,fim);
+    const futuro = data > hojeFinanceiro();
     const tipo = String(x.tipo || "").toLowerCase();
-    if(x.realizado && noPeriodo){
+    if(x.realizado && noPeriodo && !futuro){
       const mes = data.slice(0,7) || "sem-data";
       if(!resumo.meses.has(mes)) resumo.meses.set(mes,{mes,entradas:0,saidas:0,taxas:0,lucro:0});
       const linhaMes = resumo.meses.get(mes);
@@ -10348,7 +10349,7 @@ function resumoPeriodoFinanceiroSistema(inicio, fim){
       }
       linhaMes.lucro = linhaMes.entradas - linhaMes.saidas - linhaMes.taxas;
     }
-    if(x.realizado && data > hojeFinanceiro() && (!usaPeriodo || noPeriodo)){
+    if(x.realizado && futuro && (!usaPeriodo || noPeriodo)){
       if(tipo === "saida") resumo.despesasFuturas += Number(x.valor || 0);
       else resumo.futuro += Number(x.valor || 0);
     }
@@ -10377,13 +10378,13 @@ function renderRelatorioPeriodoFinanceiroSistema(){
   const meses = r.meses.length ? r.meses.map(m=>`<div class="item"><span><b>${mesAnoFinanceiroSistema(m.mes + "-01")}</b><br><small>Entradas ${moedaFinanceiro(m.entradas)} - Saidas ${moedaFinanceiro(m.saidas)} - Taxas ${moedaFinanceiro(m.taxas)}</small></span><strong>${moedaFinanceiro(m.lucro)}</strong></div>`).join("") : "<div class='item'>Nenhum movimento realizado neste periodo.</div>";
   alvo.innerHTML = `
     <div class="fin-mini-resumo"><b>Periodo:</b> ${textoFinanceiroSeguroSistema(periodoRelatorioFinanceiroSistema(inicio,fim))}</div>
-    ${linhaRelatorioFinanceiroSistema("Entradas realizadas",r.entradas,"dinheiro recebido no periodo")}
-    ${linhaRelatorioFinanceiroSistema("Saidas realizadas",r.saidas,"despesas pagas no periodo")}
+    ${linhaRelatorioFinanceiroSistema("Entradas realizadas",r.entradas,"dinheiro recebido ate hoje no periodo")}
+    ${linhaRelatorioFinanceiroSistema("Saidas realizadas",r.saidas,"despesas pagas ate hoje no periodo")}
     ${linhaRelatorioFinanceiroSistema("Taxas da maquininha",r.taxas,"taxas calculadas no periodo")}
     ${linhaRelatorioFinanceiroSistema("Lucro liquido",r.lucro,"entradas - saidas - taxas")}
     ${linhaRelatorioFinanceiroSistema("Contas em aberto",r.aberto,"pendentes dentro do periodo")}
     ${linhaRelatorioFinanceiroSistema("Contas vencidas",r.vencido,"pendentes com data anterior a hoje")}
-    ${linhaRelatorioFinanceiroSistema("Recebimentos futuros",r.futuro,"parcelas futuras previstas")}
+    ${linhaRelatorioFinanceiroSistema("Recebimentos futuros",r.futuro,"parcelas previstas, ainda nao recebidas")}
     ${linhaRelatorioFinanceiroSistema("Despesas futuras",r.despesasFuturas,"saidas futuras previstas")}
     <div class="fin-mini-resumo"><b>Resumo por mes</b></div>
     ${meses}

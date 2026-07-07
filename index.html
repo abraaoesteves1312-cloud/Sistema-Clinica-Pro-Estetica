@@ -13104,7 +13104,11 @@ async function autenticarUsuarioConfigLocal(email,senha){
 }
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
-  if(!db) return null;
+  window.__ultimoErroLoginOnlineSistema="";
+  if(!db){
+    window.__ultimoErroLoginOnlineSistema="Não foi possível iniciar a conexão online.";
+    return null;
+  }
   try{
     const sessaoAtual=await db.auth.getSession();
     const emailAtual=emailNormalizadoSistema(sessaoAtual?.data?.session?.user?.email || "");
@@ -13115,12 +13119,21 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     console.warn("Conferencia de sessao antes do login online:",e);
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
-  if(login.error) return null;
+  if(login.error){
+    window.__ultimoErroLoginOnlineSistema=login.error.message || "Não foi possível entrar online.";
+    return null;
+  }
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
-  if(!sessao?.user?.id) return null;
+  if(!sessao?.user?.id){
+    window.__ultimoErroLoginOnlineSistema="Sessão online não foi criada.";
+    return null;
+  }
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
-  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
+  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false){
+    window.__ultimoErroLoginOnlineSistema="Usuário sem clínica ativa no sistema.";
+    return null;
+  }
   const perfil=perfilResp.data;
   if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
   let nomeClinica="Clínica online";
@@ -13206,12 +13219,22 @@ window.entrarSistema = async function(){
   }
   let usuario=null;
   const conf=configSistemaSeguro();
+  const modoComercial=!!chaveSupabaseComercialSistema();
   try{
     usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }catch(e){
     console.warn("Login online falhou, tentando acesso local:",e);
+    window.__ultimoErroLoginOnlineSistema=e?.message || "Falha no login online.";
   }
-  if(!usuario && !existeUsuarioConfigValidoLocal(conf) && !chaveSupabaseComercialSistema()){
+  if(!usuario && modoComercial){
+    const usuarioLocal=await autenticarUsuarioConfigLocal(email,senha);
+    if(usuarioLocal && usuarioSuperadminSistema(usuarioLocal)){
+      usuario=usuarioLocal;
+    }else{
+      mensagemLoginProfissional("Não foi possível entrar online. Confira e-mail, senha, conexão e se o usuário está ativo na clínica.");
+      return;
+    }
+  }else if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
     usuario=await criarPrimeiroAdministradorLocal(email,senha);
     mensagemLoginProfissional("Administrador criado com sucesso.");
   }else if(!usuario){
@@ -13524,7 +13547,14 @@ function clienteSupabaseSistema(){
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
   window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
-  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey);
+  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey,{
+    auth:{
+      persistSession:true,
+      autoRefreshToken:true,
+      detectSessionInUrl:false,
+      storageKey:"gep_supabase_auth_comercial"
+    }
+  });
   return window.__clienteSupabaseSistema;
 }
 async function limparSessaoAtualSemFecharAppSistema(){
@@ -13972,7 +14002,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       removerBloqueioPlanoComercialSistema();
       const carregouLocal=await carregarPlanoPorClinicIdLocalSistema(db,"Clínica reconhecida. Entre novamente para conferir a assinatura completa.");
       if(carregouLocal) return true;
-      atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Entre com o e-mail e senha da clínica para consultar a assinatura online."));
+      atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Sessão online não encontrada. Saia e entre novamente com o e-mail e senha da clínica."));
       return false;
     }
     const perfilResp=await consultaOnlineComTempoSistema(

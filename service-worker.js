@@ -1,16 +1,29 @@
-const CACHE_NAME = "gestao-estetica-pro-app-v19-20260707-modo-local-explicito";
+const CACHE_NAME = "gestao-estetica-pro-app-v21-20260707-pwa-cache-refresh";
+const CACHE_PREFIX = "gestao-estetica-pro-app-";
 const CORE_ASSETS = [
-  "./",
-  "./index.html",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/maskable-512.png"
 ];
 
+function noStoreRequest(request) {
+  return new Request(request, { cache: "no-store" });
+}
+
+async function limparCachesAntigos() {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys
+      .filter(key => key !== CACHE_NAME && key.startsWith(CACHE_PREFIX))
+      .map(key => caches.delete(key))
+  );
+}
+
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    limparCachesAntigos()
+      .then(() => caches.open(CACHE_NAME))
       .then(cache => cache.addAll(CORE_ASSETS))
       .then(() => self.skipWaiting())
   );
@@ -18,8 +31,7 @@ self.addEventListener("install", event => {
 
 self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+    limparCachesAntigos()
       .then(() => self.clients.claim())
   );
 });
@@ -30,12 +42,19 @@ self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (event.request.mode === "navigate") {
+  const ehPaginaPrincipal =
+    event.request.mode === "navigate" ||
+    url.pathname.endsWith("/") ||
+    url.pathname.endsWith("/index.html");
+
+  if (ehPaginaPrincipal) {
     event.respondWith(
-      fetch(event.request)
+      fetch(noStoreRequest(event.request))
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put("./index.html", copy));
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put("./index.html", copy));
+          }
           return response;
         })
         .catch(() => caches.match("./index.html"))
@@ -44,16 +63,14 @@ self.addEventListener("fetch", event => {
   }
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-
-      return fetch(event.request)
-        .then(response => {
+    fetch(noStoreRequest(event.request))
+      .then(response => {
+        if (response && response.ok) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html"));
-    })
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

@@ -13702,6 +13702,16 @@ function rotuloStatusPlanoSistema(valor){
   };
   return status[String(valor || "").toLowerCase()] || "Preparação";
 }
+function resumoPlanoLocalClienteSistema(mensagem="Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."){
+  const conf=configSistemaSeguro();
+  return {
+    clinica:conf.clinica || "Clínica",
+    plano:"Não consultado",
+    ciclo:"",
+    status:"active",
+    mensagem
+  };
+}
 function dataPlanoValidaAteSistema(valor){
   if(!valor) return null;
   const data=new Date(valor);
@@ -13854,12 +13864,23 @@ function atualizarPainelPlanoComercialSistema(dados={}){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
   }
 }
+function aplicarVisibilidadePlanoClienteSistema(){
+  const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
+  const adminPlano=document.getElementById("planoAdminClinicaSistema");
+  if(adminPlano){
+    adminPlano.style.display=superadmin ? "" : "none";
+    adminPlano.setAttribute("aria-hidden",superadmin ? "false" : "true");
+  }
+  const painelPlano=document.getElementById("painelPlanoAssinaturaSistema");
+  if(painelPlano) painelPlano.setAttribute("data-visibilidade",superadmin ? "superadmin" : "cliente");
+}
 async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("planoAssinaturaMensagemSistema");
+  aplicarVisibilidadePlanoClienteSistema();
   if(!db){
     removerBloqueioPlanoComercialSistema();
-    atualizarPainelPlanoComercialSistema({mensagem:"Conecte o sistema ao Supabase para consultar o plano da clínica."});
+    atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Plano online ainda não consultado neste aparelho. O acesso da clínica continua liberado."));
     return false;
   }
   try{
@@ -13868,7 +13889,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const sessao=sessaoResp?.data?.session;
     if(!sessao){
       removerBloqueioPlanoComercialSistema();
-      atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
+      atualizarPainelPlanoComercialSistema(resumoPlanoLocalClienteSistema("Entre com o e-mail e senha da clínica para consultar a assinatura online."));
       return false;
     }
     const perfilResp=await consultaOnlineComTempoSistema(
@@ -13915,9 +13936,13 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       const tabelaAusente=/clinic_subscriptions|schema cache|does not exist|relation/i.test(assinaturaResp.error.message || "");
       if(tabelaAusente){
         removerBloqueioPlanoComercialSistema();
-        atualizarPainelPlanoComercialSistema({
+        const superadmin=usuarioSuperadminSistema(usuarioAtualSistema());
+        atualizarPainelPlanoComercialSistema(superadmin ? {
           clinica:nomeClinica,
           mensagem:"A clínica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio está ativo."
+        } : {
+          ...resumoPlanoLocalClienteSistema("Acesso liberado. O plano online ainda será conferido pelo administrador do sistema."),
+          clinica:nomeClinica
         });
         return true;
       }
@@ -15750,6 +15775,7 @@ window.renderConfig = function(){
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   try{preencherConfigOnlineSistema();}catch(e){}
   try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
+  try{aplicarVisibilidadePlanoClienteSistema();}catch(e){}
   try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
@@ -15850,6 +15876,7 @@ window.renderConfig = function(){
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
   try{aplicarModoClienteCentralOnlineSistema();}catch(e){}
+  try{aplicarVisibilidadePlanoClienteSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
   try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);

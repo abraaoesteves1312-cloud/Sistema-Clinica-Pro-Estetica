@@ -10168,6 +10168,19 @@ function contasReceberFinanceiroSistema(){
 function contaReceberVencidaFinanceiroSistema(item){
   return String(item?.data || "") < hojeFinanceiro();
 }
+function atualizarLancamentosCobrancaPagaFinanceiroSistema(cobrancaId){
+  const chave = String(cobrancaId || "");
+  if(!chave) return;
+  const fin = get("financeiroPro");
+  let mudou = false;
+  const lista = fin.map(item=>{
+    const vinculado = String(item.id || "") === chave || String(item.cobrancaId || "") === chave;
+    if(!vinculado) return item;
+    mudou = true;
+    return {...item,status:"Pago",dataPagamento:item.dataPagamento || hojeFinanceiro()};
+  });
+  if(mudou) set("financeiroPro",lista);
+}
 function marcarContaReceberComoPagaSistema(tipo,id){
   const origem = String(tipo || "");
   const chave = String(id || "");
@@ -10178,7 +10191,7 @@ function marcarContaReceberComoPagaSistema(tipo,id){
     const lista = get("financeiroPro");
     const idx = lista.findIndex(x=>String(x.id) === chave);
     if(idx < 0){alert("Conta nao encontrada.");return;}
-    lista[idx] = {...lista[idx],status:"Pago",dataPagamento:hojeFinanceiro(),data:hojeFinanceiro()};
+    lista[idx] = {...lista[idx],status:"Pago",dataPagamento:hojeFinanceiro(),data:hojeFinanceiro(),valorPago:numeroFinanceiroSistema(lista[idx].valor || 0),pago:numeroFinanceiroSistema(lista[idx].valor || 0),aberto:0};
     set("financeiroPro",lista);
   }
 
@@ -10190,8 +10203,9 @@ function marcarContaReceberComoPagaSistema(tipo,id){
     const total = numeroFinanceiroSistema(cobranca.valorTotal || cobranca.valor || 0);
     const pagoAntes = numeroFinanceiroSistema(cobranca.valorPago || cobranca.pago || 0);
     const saldo = Math.max(total - pagoAntes, 0);
-    cobrancas[idx] = {...cobranca,status:"Pago",valorPago:total,dataPagamento:hojeFinanceiro()};
+    cobrancas[idx] = {...cobranca,status:"Pago",valorPago:total,pago:total,aberto:0,dataPagamento:hojeFinanceiro()};
     set("cobrancasProntuario",cobrancas);
+    atualizarLancamentosCobrancaPagaFinanceiroSistema(cobranca.id);
 
     if(saldo > 0){
       const taxaPerc = numeroFinanceiroSistema(cobranca.taxaPerc || 0);

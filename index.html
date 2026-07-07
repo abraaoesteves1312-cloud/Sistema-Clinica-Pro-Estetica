@@ -13431,13 +13431,9 @@ function configOnlineSistema(){
 function limparUrlSupabaseSistema(valor){
   let url=String(valor || "").trim().replace(/\s+/g,"");
   if(!url) return "";
-  if(url.includes(SUPABASE_PROJECT_REF_CORRETO_SISTEMA) || url.includes(SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA)){
-    return SUPABASE_URL_CORRETA_SISTEMA;
-  }
   url=url.replace(/\/rest\/v1\/?$/i,"");
   if(url.startsWith("://")) url="https"+url;
   if(url && !/^https?:\/\//i.test(url)) url="https://"+url;
-  url=url.replace(SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA+".supabase.co",SUPABASE_PROJECT_REF_CORRETO_SISTEMA+".supabase.co");
   return url.replace(/\/+$/,"");
 }
 function limparChaveSupabaseSistema(valor){

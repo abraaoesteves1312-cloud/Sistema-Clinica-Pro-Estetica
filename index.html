@@ -3444,7 +3444,6 @@ function aplicarPermissoesUsuarioAtual(){
     el.style.display=usuarioTemAcessoTela(id) ? "" : "none";
   });
   atualizarUsuarioTopoSistema();
-  atualizarPainelAdministradorGeralVisibilidadeSistema();
 }
 function atualizarPainelAdministradorGeralVisibilidadeSistema(){
   const painel=document.getElementById("painelAdministradorGeralSistema");
@@ -3465,6 +3464,29 @@ function atualizarPainelAdministradorGeralVisibilidadeSistema(){
   if(lista) lista.innerHTML="";
   const editor=document.getElementById("adminGeralEditorSistema");
   if(editor) editor.style.display="none";
+}
+function atualizarAreasTecnicasConfigVisibilidadeSistema(){
+  const painel=document.getElementById("painelPreparacaoOnline");
+  if(!painel) return;
+  const podeVer=usuarioSuperadminSistema(usuarioAtualSistema());
+  let aviso=document.getElementById("painelPreparacaoOnlineResumoCliente");
+  if(podeVer){
+    painel.style.removeProperty("display");
+    painel.removeAttribute("aria-hidden");
+    if(aviso) aviso.style.setProperty("display","none","important");
+    return;
+  }
+  painel.style.setProperty("display","none","important");
+  painel.setAttribute("aria-hidden","true");
+  if(!aviso){
+    aviso=document.createElement("section");
+    aviso.id="painelPreparacaoOnlineResumoCliente";
+    aviso.className="config-card-pro online-central-pro";
+    aviso.innerHTML='<h3>Central online do sistema</h3><div class="msg">Conexão online ativa. Configurações técnicas disponíveis apenas para o suporte.</div>';
+    painel.parentNode.insertBefore(aviso,painel.nextSibling);
+  }
+  aviso.style.removeProperty("display");
+  aviso.removeAttribute("aria-hidden");
 }
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
 function criarTeste(){if(!testeClinica.value||!testeEmail.value||!testeSenha.value)return msgTeste.innerText="Preencha todos os campos.";localStorage.setItem("gepV2_teste",JSON.stringify({clinica:testeClinica.value,email:testeEmail.value,senha:testeSenha.value,fim:new Date(Date.now()+86400000).toISOString()}));msgTeste.innerText="Teste liberado.";emailLogin.value=testeEmail.value;senhaLogin.value=testeSenha.value;trocarAba("login")}
@@ -5389,8 +5411,6 @@ function montarTelaConfig(){
 
 function renderConfig(){
   montarTelaConfig();
-  atualizarPainelAdministradorGeralVisibilidadeSistema();
-  prepararCadastroClinicaAdminGeralSistema();
   const conf = configSistema();
   const clinica = document.getElementById("confClinica");
   const resp = document.getElementById("confResp");
@@ -15739,7 +15759,6 @@ window.renderConfig = function(){
   inserirPainelPreparacaoOnlineConfig();
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   try{preencherConfigOnlineSistema();}catch(e){}
-  try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   destacarCadastroFuncionariosConfig();
 };
 function pacienteCentralConfirmado(){
@@ -15839,9 +15858,7 @@ window.renderConfig = function(){
   aplicarLimpezaAreasAcessoProfissional();
   inserirPainelPreparacaoOnlineConfig();
   destacarCadastroFuncionariosConfig();
-  try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
   setTimeout(()=>{try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}},80);
-  setTimeout(()=>{try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}},180);
   const painel=document.getElementById("painelPreparacaoOnline");
   if(painel && !document.getElementById("painelLimpezaLocal")){
     painel.insertAdjacentHTML("afterend",`<section id="painelLimpezaLocal" class="config-card-pro" style="margin-top:16px">
@@ -15850,6 +15867,7 @@ window.renderConfig = function(){
       <div class="msg">Próximo teste recomendado: cadastrar paciente, preencher anamnese, salvar fotos, registrar evolução, gerar cobrança e imprimir relatório.</div>
     </section>`);
   }
+  try{prepararCadastroClinicaAdminGeralSistema();atualizarPainelAdministradorGeralVisibilidadeSistema();atualizarAreasTecnicasConfigVisibilidadeSistema();}catch(e){}
 };
 const profissoesClinicaPro = [
   "Administradora","Advogada","Agente de saúde","Analista administrativa","Analista financeira","Arquiteta","Assistente administrativa",
@@ -16298,7 +16316,6 @@ const abrirTelaBaseAutorizacoesPro = window.abrirTela || abrirTela;
 window.abrirTela = function(id,b){
   const r=abrirTelaBaseAutorizacoesPro(id,b);
   if(id==="autorizacoes") setTimeout(()=>{try{prepararPaginaAutorizacoesPro();preencherTermoAutomatico();prepararAssinaturaDigital();}catch(e){}},120);
-  if(id==="configuracoes") setTimeout(()=>{try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}},220);
   return r;
 };
 try{ abrirTela = window.abrirTela; }catch(e){}

@@ -13237,17 +13237,22 @@ window.entrarSistema = async function(){
     return;
   }
   let usuario=null;
-  const conf=configSistemaSeguro();
+  limparEscopoClinicaSistema();
   try{
     usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }catch(e){
     console.warn("Login online falhou, tentando acesso local:",e);
   }
-  if(!usuario && !existeUsuarioConfigValidoLocal(conf)){
-    usuario=await criarPrimeiroAdministradorLocal(email,senha);
-    mensagemLoginProfissional("Administrador criado com sucesso.");
-  }else if(!usuario){
-    usuario=await autenticarUsuarioConfigLocal(email,senha);
+  if(!usuario){
+    const escopoLocal=procurarClinicaPorEmailSistema(email);
+    if(escopoLocal) ativarEscopoClinicaSistema(escopoLocal);
+    const conf=configSistemaSeguro();
+    if(!existeUsuarioConfigValidoLocal(conf)){
+      usuario=await criarPrimeiroAdministradorLocal(email,senha);
+      mensagemLoginProfissional("Administrador criado com sucesso.");
+    }else{
+      usuario=await autenticarUsuarioConfigLocal(email,senha);
+    }
   }
   if(!usuario){
     mensagemLoginProfissional("E-mail ou senha inválidos.");

@@ -3493,10 +3493,34 @@ function limparTelaConfiguracoesSessaoSistema(){
   if(!tela) return;
   tela.innerHTML="";
 }
+function limparCachesVisuaisConfiguracoesSessaoSistema(){
+  try{
+    if(typeof planosComerciaisCacheSistema!=="undefined") planosComerciaisCacheSistema=[];
+    if(typeof adminGeralClinicasCacheSistema!=="undefined") adminGeralClinicasCacheSistema=[];
+  }catch(e){}
+  try{removerBloqueioPlanoComercialSistema();}catch(e){}
+  try{
+    const lista=document.getElementById("adminGeralListaClinicas");
+    if(lista) lista.innerHTML="";
+    const editor=document.getElementById("adminGeralEditorSistema");
+    if(editor) editor.style.display="none";
+  }catch(e){}
+}
+function limparEstadoVisualTrocaUsuarioSistema(){
+  limparCachesVisuaisConfiguracoesSessaoSistema();
+  limparTelaConfiguracoesSessaoSistema();
+  window.currentUser=null;
+  window.currentProfile=null;
+  window.currentClinic=null;
+  window.currentClinicId="";
+  window.clinicId="";
+  window.sessionMode="";
+  window.__planoComercialBloqueadoSistema={bloqueado:false};
+}
 function reconstruirTelaConfiguracoesSessaoSistema(){
   const tela=document.getElementById("configuracoes");
   if(!tela || !tela.classList.contains("active")) return;
-  limparTelaConfiguracoesSessaoSistema();
+  limparEstadoVisualTrocaUsuarioSistema();
   renderConfig();
 }
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
@@ -13245,6 +13269,7 @@ window.entrarSistema = async function(){
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);
   definirUsuarioAtualSistema({...usuario,perfil:perfilUsuarioSistema(usuario),acessos:usuario.acessos || acessosPerfilSistema(usuario.perfil)});
+  limparEstadoVisualTrocaUsuarioSistema();
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){console.warn("Fixacao da Central Online apos login:",e);}
   const loginPage=document.getElementById("loginPage");
   const app=document.getElementById("app");
@@ -13564,7 +13589,7 @@ async function limparSessaoAtualSemFecharAppSistema(){
   window.usuarioLogadoSistema=null;
   removerBloqueioPlanoComercialSistema();
   sessionStorage.removeItem("gepV2_usuarioLogado");
-  limparTelaConfiguracoesSessaoSistema();
+  limparEstadoVisualTrocaUsuarioSistema();
   limparEscopoClinicaSistema();
   try{
     const conf=configSistemaSeguro();
@@ -13586,10 +13611,7 @@ async function limparSessaoAtualSemFecharAppSistema(){
     const msg=document.getElementById("onlineStatusSistema");
     if(msg) msg.innerText="Sessao anterior encerrada. Entre com o proximo usuario para carregar a clinica correta.";
   }catch(e){}
-  try{
-    if(typeof adminGeralClinicasCacheSistema!=="undefined") adminGeralClinicasCacheSistema=[];
-    if(typeof planosComerciaisCacheSistema!=="undefined") planosComerciaisCacheSistema=[];
-  }catch(e){}
+  limparCachesVisuaisConfiguracoesSessaoSistema();
 }
 async function garantirSessaoOnlineDoUsuarioAtualSistema(){
   const usuario=usuarioAtualSistema();

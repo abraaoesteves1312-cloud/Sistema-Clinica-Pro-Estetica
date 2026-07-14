@@ -3545,8 +3545,11 @@ function entrarRapido(){
 }
 async function sairSistema(){
   await limparSessaoAtualSemFecharAppSistema();
-  app.classList.remove("active");
-  loginPage.style.display="block";
+  try{sessionStorage.clear();}catch(e){}
+  window.usuarioLogadoSistema=null;
+  window.__clinicScopeSistema="";
+  const destino=window.location.origin + window.location.pathname;
+  window.location.replace(destino);
 }
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
@@ -5135,10 +5138,22 @@ function configSistema(){
   if(chaveLocalSistema("config")!=="gepV2_config"){
     conf.online={...(base.online || {}),...(conf.online || {})};
   }
-  if(!Array.isArray(conf.usuarios) || !conf.usuarios.some(u=>u && String(u.email || "").trim() && (u.senhaHash || u.senha))){
-    conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
+  const escopo=escopoClinicaAtualSistema();
+  const usuariosOriginais=Array.isArray(conf.usuarios)?conf.usuarios:[];
+  const usuariosEscopo=escopo ? usuariosOriginais.filter(usuarioMesmoEscopoAtualSistema) : usuariosOriginais;
+  if(!usuariosEscopo.some(u=>u && String(u.email || "").trim() && (u.senhaHash || u.senha))){
+    if(escopo && escopo!==escopoAdminGeralSistema){
+      const atual=usuarioAtualSistema();
+      conf.usuarios=atual && normalizarEscopoClinicaSistema(atual.onlineClinicId)===escopo ? [atual] : [];
+    }else if(escopo===escopoAdminGeralSistema){
+      conf.usuarios=usuariosBackupAcessoSistema().filter(usuarioSuperadminSistema);
+    }else{
+      conf.usuarios=mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
+    }
+  }else{
+    conf.usuarios=usuariosEscopo;
   }
-  if(escopoClinicaAtualSistema()){
+  if(escopo){
     conf.usuarios=conf.usuarios.filter(usuarioMesmoEscopoAtualSistema);
   }
   return conf;

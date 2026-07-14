@@ -13964,6 +13964,14 @@ function atualizarPainelPlanoComercialSistema(dados={}){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
   }
 }
+function resumoDiagnosticoAuthPlanoSistema(valor){
+  try{
+    const texto=JSON.stringify(valor);
+    return texto && texto.length>420 ? texto.slice(0,420)+"..." : (texto || "vazio");
+  }catch(e){
+    return String(valor || "vazio");
+  }
+}
 function textoDiagnosticoPlanoOnlineSistema(diag={},mensagem=""){
   return [
     mensagem || "Diagnostico da assinatura online.",
@@ -13972,8 +13980,13 @@ function textoDiagnosticoPlanoOnlineSistema(diag={},mensagem=""){
     "2. clienteSupabaseSistema criado: "+(diag.clienteCriado===true?"sim":diag.clienteCriado===false?"nao":"nao testado"),
     "3. sessao Supabase valida: "+(diag.sessaoValida===true?"sim":diag.sessaoValida===false?"nao":"nao testado"),
     "4. clinic_id atual: "+(diag.clinicId || "vazio"),
-    "5. erro clinic_subscriptions: "+(diag.erroClinicSubscriptions || "nao consultado"),
-    "6. erro clinic_plans: "+(diag.erroClinicPlans || "nao consultado")
+    "5. getSession: "+(diag.getSessionResultado || "nao consultado"),
+    "6. getUser: "+(diag.getUserResultado || "nao consultado"),
+    "7. email Supabase: "+(diag.emailSupabase || "vazio"),
+    "8. profile bruto: "+(diag.profileResultado || "nao consultado"),
+    "9. clinic_id profile: "+(diag.profileClinicId || "vazio"),
+    "10. erro clinic_subscriptions: "+(diag.erroClinicSubscriptions || "nao consultado"),
+    "11. erro clinic_plans: "+(diag.erroClinicPlans || "nao consultado")
   ].join("\n");
 }
 function atualizarDiagnosticoPlanoOnlineSistema(diag={},mensagem=""){
@@ -13986,6 +13999,11 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     clienteCriado:null,
     sessaoValida:null,
     clinicId:escopoClinicaAtualSistema() || "",
+    getSessionResultado:"",
+    getUserResultado:"",
+    emailSupabase:"",
+    profileResultado:"",
+    profileClinicId:"",
     erroClinicSubscriptions:"",
     erroClinicPlans:""
   };
@@ -14008,8 +14026,27 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     atualizarDiagnosticoPlanoOnlineSistema(diagPlano,"Consultando a clinica e o plano online...");
     if(msg) msg.innerText="Consultando a clínica e o plano online...";
     const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
+    diagPlano.getSessionResultado=resumoDiagnosticoAuthPlanoSistema({
+      hasSession:!!sessaoResp?.data?.session,
+      userId:sessaoResp?.data?.session?.user?.id || "",
+      email:sessaoResp?.data?.session?.user?.email || "",
+      error:sessaoResp?.error?.message || ""
+    });
     const sessao=sessaoResp?.data?.session;
     diagPlano.sessaoValida=!!sessao;
+    try{
+      const userResp=await promessaComTempoSistema(db.auth.getUser(),"Consulta do usuario autenticado",15);
+      diagPlano.getUserResultado=resumoDiagnosticoAuthPlanoSistema({
+        hasUser:!!userResp?.data?.user,
+        userId:userResp?.data?.user?.id || "",
+        email:userResp?.data?.user?.email || "",
+        error:userResp?.error?.message || ""
+      });
+      diagPlano.emailSupabase=userResp?.data?.user?.email || sessao?.user?.email || "";
+    }catch(e){
+      diagPlano.getUserResultado=textoErroOnlineSistema(e);
+      diagPlano.emailSupabase=sessao?.user?.email || "";
+    }
     if(!sessao){
       removerBloqueioPlanoComercialSistema();
       atualizarPainelPlanoComercialSistema({mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"Entre no acesso online para consultar a assinatura desta clinica.")});
@@ -14020,6 +14057,8 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       "Consulta do perfil da clínica",
       20
     );
+    diagPlano.profileResultado=resumoDiagnosticoAuthPlanoSistema({data:perfilResp.data || null,error:perfilResp.error?.message || ""});
+    diagPlano.profileClinicId=perfilResp.data?.clinic_id || "";
     if(perfilResp.error) throw perfilResp.error;
     const perfil=perfilResp.data;
     if(!perfil?.clinic_id){

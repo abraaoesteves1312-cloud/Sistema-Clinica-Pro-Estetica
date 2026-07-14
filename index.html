@@ -5423,16 +5423,22 @@ function montarTelaConfig(){
 function renderConfig(){
   montarTelaConfig();
   const conf = configSistema();
+  const usuariosAtuais = (conf.usuarios || []).filter(usuarioMesmoEscopoAtualSistema);
   const clinica = document.getElementById("confClinica");
   const resp = document.getElementById("confResp");
   const whats = document.getElementById("confWhats");
   const insta = document.getElementById("confInsta");
+  const msgConfig = document.getElementById("msgConfig");
   if(clinica) clinica.value = conf.clinica || "";
   if(resp) resp.value = conf.resp || conf.responsavel || "";
   if(whats) whats.value = conf.whats || "";
   if(insta) insta.value = conf.insta || "";
   renderConfigProfissionais(conf.profissionais || []);
-  renderConfigUsuarios(conf.usuarios || []);
+  renderConfigUsuarios(usuariosAtuais);
+  if(msgConfig){
+    const emails = usuariosAtuais.map(u=>String(u.email || "").trim()).filter(Boolean);
+    msgConfig.innerText = "Configurações salvas. Usuários gravados: " + (emails.join(", ") || "nenhum") + ".";
+  }
   renderResumoBackupSistema();
 }
 
@@ -5525,9 +5531,13 @@ function renderConfigUsuarios(lista){
   const area = document.getElementById("configUsuariosLista");
   if(!area) return;
   area.innerHTML = "";
-  let base = mesclarUsuariosAcessoSistema(Array.isArray(lista) ? lista : []);
-  if(!base.length) base = mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema());
-  if(!base.length) base=[{nome:"Administrador", email:"", senha:"", perfil:"Administrador", acessos:todosAcessosSistema(), ativo:true}];
+  const listaInformada = Array.isArray(lista);
+  let base = mesclarUsuariosAcessoSistema(listaInformada ? lista : []);
+  base = base.filter(usuarioMesmoEscopoAtualSistema);
+  if(!base.length && !listaInformada){
+    base = mesclarUsuariosAcessoSistema(usuariosBackupAcessoSistema()).filter(usuarioMesmoEscopoAtualSistema);
+  }
+  if(!base.length && !listaInformada) base=[{nome:"Administrador", email:"", senha:"", perfil:"Administrador", acessos:todosAcessosSistema(), ativo:true}];
   base.forEach(u=>adicionarUsuarioConfig(u.nome || "", u.email || "", "", u.perfil || "Administrador", u.acessos || null, u.senhaHash || "", u.senha || "", u.ativo!==false));
 }
 

@@ -3488,6 +3488,17 @@ function atualizarAreasTecnicasConfigVisibilidadeSistema(){
   aviso.style.removeProperty("display");
   aviso.removeAttribute("aria-hidden");
 }
+function atualizarConfigAposTrocaUsuarioSistema(){
+  try{
+    if(typeof planosComerciaisCacheSistema!=="undefined") planosComerciaisCacheSistema=[];
+    if(typeof adminGeralClinicasCacheSistema!=="undefined") adminGeralClinicasCacheSistema=[];
+  }catch(e){}
+  try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
+  try{renderConfig();}catch(e){console.warn("Atualizacao da configuracao apos troca de usuario:",e);}
+  try{atualizarPainelAdministradorGeralVisibilidadeSistema();}catch(e){}
+  try{atualizarAreasTecnicasConfigVisibilidadeSistema();}catch(e){}
+  try{carregarPlanoClinicaOnlineSistema(false);}catch(e){}
+}
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
 function criarTeste(){if(!testeClinica.value||!testeEmail.value||!testeSenha.value)return msgTeste.innerText="Preencha todos os campos.";localStorage.setItem("gepV2_teste",JSON.stringify({clinica:testeClinica.value,email:testeEmail.value,senha:testeSenha.value,fim:new Date(Date.now()+86400000).toISOString()}));msgTeste.innerText="Teste liberado.";emailLogin.value=testeEmail.value;senhaLogin.value=testeSenha.value;trocarAba("login")}
 function entrarSistema(){
@@ -13245,6 +13256,7 @@ window.entrarSistema = async function(){
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   atualizarTudo();
+  atualizarConfigAposTrocaUsuarioSistema();
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13572,10 +13584,6 @@ async function limparSessaoAtualSemFecharAppSistema(){
     if(diag){diag.innerText="";diag.style.display="none";}
     const msg=document.getElementById("onlineStatusSistema");
     if(msg) msg.innerText="Sessao anterior encerrada. Entre com o proximo usuario para carregar a clinica correta.";
-  }catch(e){}
-  try{
-    if(typeof adminGeralClinicasCacheSistema!=="undefined") adminGeralClinicasCacheSistema=[];
-    if(typeof planosComerciaisCacheSistema!=="undefined") planosComerciaisCacheSistema=[];
   }catch(e){}
 }
 async function garantirSessaoOnlineDoUsuarioAtualSistema(){

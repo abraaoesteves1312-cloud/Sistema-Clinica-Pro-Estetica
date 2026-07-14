@@ -3488,6 +3488,17 @@ function atualizarAreasTecnicasConfigVisibilidadeSistema(){
   aviso.style.removeProperty("display");
   aviso.removeAttribute("aria-hidden");
 }
+function limparTelaConfiguracoesSessaoSistema(){
+  const tela=document.getElementById("configuracoes");
+  if(!tela) return;
+  tela.innerHTML="";
+}
+function reconstruirTelaConfiguracoesSessaoSistema(){
+  const tela=document.getElementById("configuracoes");
+  if(!tela || !tela.classList.contains("active")) return;
+  limparTelaConfiguracoesSessaoSistema();
+  renderConfig();
+}
 function trocarAba(a){formLogin.classList.remove("active");formTeste.classList.remove("active");tabLogin.classList.remove("active");tabTeste.classList.remove("active");(a==="login"?formLogin:formTeste).classList.add("active");(a==="login"?tabLogin:tabTeste).classList.add("active")}
 function criarTeste(){if(!testeClinica.value||!testeEmail.value||!testeSenha.value)return msgTeste.innerText="Preencha todos os campos.";localStorage.setItem("gepV2_teste",JSON.stringify({clinica:testeClinica.value,email:testeEmail.value,senha:testeSenha.value,fim:new Date(Date.now()+86400000).toISOString()}));msgTeste.innerText="Teste liberado.";emailLogin.value=testeEmail.value;senhaLogin.value=testeSenha.value;trocarAba("login")}
 function entrarSistema(){
@@ -13245,6 +13256,7 @@ window.entrarSistema = async function(){
   try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   atualizarTudo();
+  reconstruirTelaConfiguracoesSessaoSistema();
 };
 window.entrarRapido = function(){
   prepararLoginProfissional();
@@ -13552,6 +13564,7 @@ async function limparSessaoAtualSemFecharAppSistema(){
   window.usuarioLogadoSistema=null;
   removerBloqueioPlanoComercialSistema();
   sessionStorage.removeItem("gepV2_usuarioLogado");
+  limparTelaConfiguracoesSessaoSistema();
   limparEscopoClinicaSistema();
   try{
     const conf=configSistemaSeguro();

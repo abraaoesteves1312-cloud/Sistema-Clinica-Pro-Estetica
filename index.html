@@ -14015,6 +14015,7 @@ function atualizarPainelPlanoComercialSistema(dados={}){
     mensagem.innerText=dados.mensagem || "Nenhum bloqueio comercial está ativo. O funcionamento atual continua normal.";
   }
 }
+<<<<<<< HEAD
 function resumoDiagnosticoAuthPlanoSistema(valor){
   try{
     const texto=JSON.stringify(valor);
@@ -14058,6 +14059,9 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     erroClinicSubscriptions:"",
     erroClinicPlans:""
   };
+=======
+async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
+>>>>>>> parent of cfe180b (Diagnostico temporario do plano online no celular)
   try{
     if(document.getElementById("onlineSupabaseUrl") || document.getElementById("onlineSupabaseAnonKey")){
       salvarConfigOnlineRapidoSistema();
@@ -14066,15 +14070,13 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     console.warn("Preparacao da conexao do plano:",e);
   }
   const db=clienteSupabaseSistema();
-  diagPlano.clienteCriado=!!db;
   const msg=document.getElementById("planoAssinaturaMensagemSistema");
   if(!db){
     removerBloqueioPlanoComercialSistema();
-    atualizarPainelPlanoComercialSistema({mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"Conecte o sistema ao Supabase para consultar o plano da clinica.")});
+    atualizarPainelPlanoComercialSistema({mensagem:"Conecte o sistema ao Supabase para consultar o plano da clínica."});
     return false;
   }
   try{
-    atualizarDiagnosticoPlanoOnlineSistema(diagPlano,"Consultando a clinica e o plano online...");
     if(msg) msg.innerText="Consultando a clínica e o plano online...";
     const sessaoResp=await promessaComTempoSistema(db.auth.getSession(),"Consulta do acesso online",15);
     diagPlano.getSessionResultado=resumoDiagnosticoAuthPlanoSistema({
@@ -14084,6 +14086,7 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       error:sessaoResp?.error?.message || ""
     });
     const sessao=sessaoResp?.data?.session;
+<<<<<<< HEAD
     diagPlano.sessaoValida=!!sessao;
     try{
       const userResp=await promessaComTempoSistema(db.auth.getUser(),"Consulta do usuario autenticado",15);
@@ -14098,9 +14101,11 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       diagPlano.getUserResultado=textoErroOnlineSistema(e);
       diagPlano.emailSupabase=sessao?.user?.email || "";
     }
+=======
+>>>>>>> parent of cfe180b (Diagnostico temporario do plano online no celular)
     if(!sessao){
       removerBloqueioPlanoComercialSistema();
-      atualizarPainelPlanoComercialSistema({mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"Entre no acesso online para consultar a assinatura desta clinica.")});
+      atualizarPainelPlanoComercialSistema({mensagem:"Entre no acesso online para consultar a assinatura desta clínica."});
       return false;
     }
     const perfilResp=await consultaOnlineComTempoSistema(
@@ -14114,11 +14119,9 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const perfil=perfilResp.data;
     if(!perfil?.clinic_id){
       limparClinicaOnlineLocalSistema();
-      diagPlano.clinicId="";
-      atualizarPainelPlanoComercialSistema({mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"Este usuario ainda nao esta vinculado a uma clinica online.")});
+      atualizarPainelPlanoComercialSistema({mensagem:"Este usuário ainda não está vinculado a uma clínica online."});
       return false;
     }
-    diagPlano.clinicId=perfil.clinic_id;
     const conf=configSistemaSeguro();
     conf.online=conf.online || {};
     conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
@@ -14139,17 +14142,6 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     if(clinicaResp.error) throw clinicaResp.error;
     const nomeClinica=clinicaResp.data?.name || configSistemaSeguro().clinica || "Clínica online";
 
-    try{
-      const clinicPlansDiagResp=await consultaOnlineComTempoSistema(
-        db.from("clinic_plans").select("id").limit(1),
-        "Diagnostico clinic_plans",
-        15
-      );
-      diagPlano.erroClinicPlans=clinicPlansDiagResp.error ? textoErroOnlineSistema(clinicPlansDiagResp.error) : "sem erro";
-    }catch(e){
-      diagPlano.erroClinicPlans=textoErroOnlineSistema(e);
-    }
-
     const assinaturaResp=await consultaOnlineComTempoSistema(
       db.from("clinic_subscriptions")
         .select("id,plan_id,status,billing_cycle,current_period_end,trial_ends_at,grace_ends_at,commercial_plans(name,code)")
@@ -14158,14 +14150,13 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       "Consulta da assinatura",
       20
     );
-    diagPlano.erroClinicSubscriptions=assinaturaResp.error ? textoErroOnlineSistema(assinaturaResp.error) : "sem erro";
     if(assinaturaResp.error){
       const tabelaAusente=/clinic_subscriptions|schema cache|does not exist|relation/i.test(assinaturaResp.error.message || "");
       if(tabelaAusente){
         removerBloqueioPlanoComercialSistema();
         atualizarPainelPlanoComercialSistema({
           clinica:nomeClinica,
-          mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"A clinica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio esta ativo.")
+          mensagem:"A clínica foi reconhecida. Falta apenas instalar a estrutura de planos no Supabase; nenhum bloqueio está ativo."
         });
         return true;
       }
@@ -14181,13 +14172,13 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
       status:assinatura.status,
       bloqueado:regraPlano.bloqueado,
       alerta:regraPlano.alerta,
-      mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,regraPlano.mensagem)
+      mensagem:regraPlano.mensagem
     });
     aplicarBloqueioPlanoComercialSistema(regraPlano,{clinica:nomeClinica,plano:planoLigado?.name});
     return !regraPlano.bloqueado;
   }catch(e){
     console.warn("Consulta comercial online:",e);
-    atualizarPainelPlanoComercialSistema({mensagem:textoDiagnosticoPlanoOnlineSistema(diagPlano,"Nao foi possivel consultar o plano agora: "+textoErroOnlineSistema(e))});
+    atualizarPainelPlanoComercialSistema({mensagem:"Não foi possível consultar o plano agora: "+textoErroOnlineSistema(e)});
     if(mostrarAviso) alert("Não foi possível consultar o plano agora. Confira a conexão online.");
     return false;
   }

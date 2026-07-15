@@ -13155,6 +13155,18 @@ async function autenticarUsuarioConfigLocal(email,senha){
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
   if(!db) return null;
+  const erroOnlineAutenticadoSistema=(mensagem)=>{
+    const erro=new Error(mensagem);
+    erro.onlineAutenticado=true;
+    return erro;
+  };
+  const online=configOnlineSistema();
+  const mascararChaveLoginOnlineSistema=(chave)=>{
+    const texto=String(chave || "");
+    if(!texto) return "vazia";
+    if(texto.length<=8) return texto.slice(0,2)+"..."+texto.slice(-2);
+    return texto.slice(0,4)+"..."+texto.slice(-4);
+  };
   try{
     const sessaoAtual=await db.auth.getSession();
     const emailAtual=emailNormalizadoSistema(sessaoAtual?.data?.session?.user?.email || "");
@@ -13165,12 +13177,29 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     console.warn("Conferencia de sessao antes do login online:",e);
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
-  if(login.error) return null;
-  const erroOnlineAutenticadoSistema=(mensagem)=>{
-    const erro=new Error(mensagem);
-    erro.onlineAutenticado=true;
-    return erro;
-  };
+  if(login.error){
+    const diagnosticoLogin={
+      mensagem:login.error.message || "",
+      codigo:login.error.code || "",
+      status:login.error.status || "",
+      email:emailNormalizadoSistema(email),
+      supabaseUrl:online.supabaseUrl || "",
+      anonKeyMascara:mascararChaveLoginOnlineSistema(online.supabaseAnonKey)
+    };
+    window.__ultimoErroLoginOnlineSistema=diagnosticoLogin;
+    const textoErro=[
+      "Falha no login online: "+(diagnosticoLogin.mensagem || "erro desconhecido"),
+      "codigo: "+(diagnosticoLogin.codigo || "vazio"),
+      "status: "+(diagnosticoLogin.status || "vazio"),
+      "email: "+(diagnosticoLogin.email || "vazio"),
+      "url: "+(diagnosticoLogin.supabaseUrl || "vazia"),
+      "anon key: "+diagnosticoLogin.anonKeyMascara
+    ].join("\n");
+    console.warn("Erro real do login online Supabase:",diagnosticoLogin);
+    const msgPlano=document.getElementById("planoAssinaturaMensagemSistema");
+    if(msgPlano) msgPlano.innerText=textoErro;
+    throw erroOnlineAutenticadoSistema(textoErro);
+  }
   let sessao=login?.data?.session || null;
   if(sessao?.access_token && sessao?.refresh_token){
     try{

@@ -13154,6 +13154,7 @@ async function autenticarUsuarioConfigLocal(email,senha){
 }
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   const db=clienteSupabaseSistema();
+  diagPlano.clienteCriado=!!db;
   if(!db) return null;
   const erroOnlineAutenticadoSistema=(mensagem)=>{
     const erro=new Error(mensagem);
@@ -13177,6 +13178,7 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     console.warn("Conferencia de sessao antes do login online:",e);
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
+<<<<<<< HEAD
   if(login.error){
     const diagnosticoLogin={
       mensagem:login.error.message || "",
@@ -13218,6 +13220,12 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     sessao=sessaoResp?.data?.session || sessao;
   }
   if(!sessao?.user?.id) throw erroOnlineAutenticadoSistema("Login online aceito, mas a sessao Supabase nao foi preservada.");
+=======
+  if(login.error) return null;
+  const sessaoResp=await db.auth.getSession();
+  const sessao=sessaoResp?.data?.session;
+  if(!sessao?.user?.id) return null;
+>>>>>>> parent of 5bd1978 (Corrige sessão Supabase no celular)
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
   if(perfilResp.error) throw erroOnlineAutenticadoSistema("Login online aceito, mas nao foi possivel consultar o profile: "+perfilResp.error.message);
   if(!perfilResp.data) throw erroOnlineAutenticadoSistema("Login online aceito, mas o profile nao foi encontrado.");
@@ -13339,7 +13347,7 @@ window.entrarSistema = async function(){
   if(app) app.classList.add("active");
   if(clinicaLogada) clinicaLogada.innerText=(configSistemaSeguro().clinica || "Clínica")+" — "+(usuario.nome || usuario.email);
   aplicarPermissoesUsuarioAtual();
-  try{await garantirSessaoOnlineDoUsuarioAtualSistema(senha);}catch(e){}
+  try{await garantirSessaoOnlineDoUsuarioAtualSistema();}catch(e){}
   try{fixarCentralOnlineNoUsuarioAtualSistema();}catch(e){}
   atualizarTudo();
   atualizarConfigAposTrocaUsuarioSistema();
@@ -13679,73 +13687,23 @@ async function limparSessaoAtualSemFecharAppSistema(){
     if(msg) msg.innerText="Sessao anterior encerrada. Entre com o proximo usuario para carregar a clinica correta.";
   }catch(e){}
 }
-async function garantirSessaoOnlineDoUsuarioAtualSistema(senhaAtual=""){
+async function garantirSessaoOnlineDoUsuarioAtualSistema(){
   const usuario=usuarioAtualSistema();
   const emailLocal=emailNormalizadoSistema(usuario && (usuario.email || usuario.login || usuario.emailAcesso || usuario.userEmail));
-  if(!emailLocal) return null;
+  if(!emailLocal) return;
   const db=clienteSupabaseSistema();
-  if(!db || !db.auth) return null;
+  if(!db || !db.auth) return;
   try{
-    let sessaoResp=await db.auth.getSession();
-    let sessao=sessaoResp?.data?.session || null;
-    const emailOnline=emailNormalizadoSistema(sessao?.user?.email || "");
+    const sessaoResp=await db.auth.getSession();
+    const emailOnline=emailNormalizadoSistema(sessaoResp?.data?.session?.user?.email || "");
     if(emailOnline && emailOnline!==emailLocal){
       await db.auth.signOut();
-      sessao=null;
       limparClinicaOnlineLocalSistema();
       const msg=document.getElementById("onlineStatusSistema");
-      if(msg) msg.innerText="Sessão online anterior desconectada. Entrando online com o usuário atual.";
+      if(msg) msg.innerText="Sessão online anterior desconectada. Entre online com o usuário atual para carregar a clínica correta.";
     }
-    if(!sessao?.user?.id && senhaAtual){
-      const login=await db.auth.signInWithPassword({email:emailLocal,password:senhaAtual});
-      if(login.error){
-        console.warn("Recuperacao da sessao Supabase falhou:",login.error);
-        return null;
-      }
-      sessao=login?.data?.session || null;
-      if(sessao?.access_token && sessao?.refresh_token){
-        try{
-          await db.auth.setSession({
-            access_token:sessao.access_token,
-            refresh_token:sessao.refresh_token
-          });
-        }catch(e){
-          console.warn("Persistencia da sessao Supabase no PWA:",e);
-        }
-      }
-      sessaoResp=await db.auth.getSession();
-      sessao=sessaoResp?.data?.session || sessao;
-    }
-    if(!sessao?.user?.id) return null;
-    const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
-    if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
-    const perfil=perfilResp.data;
-    if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
-    const conf=configSistemaSeguro();
-    conf.online=conf.online || {};
-    conf.online.ativo=true;
-    conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
-    if(chaveSupabaseComercialSistema()) conf.online.supabaseAnonKey=chaveSupabaseComercialSistema();
-    conf.online.clinicId=perfil.clinic_id || "";
-    conf.online.email=emailLocal;
-    conf.online.senha="";
-    salvarConfigSistemaSeguro(conf);
-    const usuarioAtual=usuarioAtualSistema();
-    if(usuarioAtual){
-      usuarioAtual.nome=perfil.full_name || usuarioAtual.nome || emailLocal;
-      usuarioAtual.email=emailLocal;
-      usuarioAtual.onlineClinicId=perfil.clinic_id || usuarioAtual.onlineClinicId || "";
-      usuarioAtual.role=perfil.role || usuarioAtual.role;
-      usuarioAtual.perfilOriginal=perfil.role || usuarioAtual.perfilOriginal;
-      usuarioAtual.perfil=perfilUsuarioSistema({perfil:perfil.role || usuarioAtual.perfil});
-      usuarioAtual.superadmin=usuarioSuperadminSistema({role:perfil.role,perfil:perfil.role});
-      usuarioAtual.isSuperadmin=usuarioAtual.superadmin;
-      definirUsuarioAtualSistema(usuarioAtual);
-    }
-    return sessao;
   }catch(e){
     console.warn("Conferência da sessão online:",e);
-    return null;
   }
 }
 async function sistemaOnlinePodeSincronizarSilencioso(){

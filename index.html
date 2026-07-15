@@ -13166,23 +13166,33 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
   if(login.error) return null;
-  const sessaoResp=await db.auth.getSession();
-  let sessao=login?.data?.session || sessaoResp?.data?.session;
-  if(!sessao?.user?.id && login?.data?.session?.access_token && login?.data?.session?.refresh_token){
+  const erroOnlineAutenticadoSistema=(mensagem)=>{
+    const erro=new Error(mensagem);
+    erro.onlineAutenticado=true;
+    return erro;
+  };
+  let sessao=login?.data?.session || null;
+  if(sessao?.access_token && sessao?.refresh_token){
     try{
       await db.auth.setSession({
-        access_token:login.data.session.access_token,
-        refresh_token:login.data.session.refresh_token
+        access_token:sessao.access_token,
+        refresh_token:sessao.refresh_token
       });
       const sessaoConfirmada=await db.auth.getSession();
-      sessao=sessaoConfirmada?.data?.session || login.data.session;
+      sessao=sessaoConfirmada?.data?.session || sessao;
     }catch(e){
       console.warn("Recuperacao da sessao Supabase apos login:",e);
     }
   }
-  if(!sessao?.user?.id) return null;
+  if(!sessao?.user?.id){
+    const sessaoResp=await db.auth.getSession();
+    sessao=sessaoResp?.data?.session || sessao;
+  }
+  if(!sessao?.user?.id) throw erroOnlineAutenticadoSistema("Login online aceito, mas a sessao Supabase nao foi preservada.");
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
-  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
+  if(perfilResp.error) throw erroOnlineAutenticadoSistema("Login online aceito, mas nao foi possivel consultar o profile: "+perfilResp.error.message);
+  if(!perfilResp.data) throw erroOnlineAutenticadoSistema("Login online aceito, mas o profile nao foi encontrado.");
+  if(perfilResp.data.active===false) throw erroOnlineAutenticadoSistema("Login online aceito, mas o usuario esta inativo.");
   const perfil=perfilResp.data;
   if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
   let nomeClinica="Clínica online";
@@ -13268,6 +13278,11 @@ window.entrarSistema = async function(){
   try{
     usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }catch(e){
+    if(e && e.onlineAutenticado){
+      console.warn("Login online autenticado sem sessao/profile completo:",e);
+      mensagemLoginProfissional(e.message || "Login online aceito, mas a sessão não foi confirmada. Tente novamente.");
+      return;
+    }
     console.warn("Login online falhou, tentando acesso local:",e);
   }
   if(!usuario){
@@ -13584,7 +13599,14 @@ function clienteSupabaseSistema(){
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
   window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
-  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey);
+  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey,{
+    auth:{
+      persistSession:true,
+      autoRefreshToken:true,
+      detectSessionInUrl:true,
+      storageKey:"gep_supabase_auth_sistema"
+    }
+  });
   return window.__clienteSupabaseSistema;
 }
 async function limparSessaoAtualSemFecharAppSistema(){

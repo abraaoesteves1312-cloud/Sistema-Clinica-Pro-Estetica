@@ -13165,7 +13165,21 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     console.warn("Conferencia de sessao antes do login online:",e);
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
-  if(login.error) return null;
+  if(login.error){
+    const diagnosticoLoginOnline={
+      emailEnviado:email,
+      tamanhoSenha:String(senha || "").length,
+      erro:{
+        message:login.error.message || "",
+        code:login.error.code || "",
+        status:login.error.status || "",
+        name:login.error.name || ""
+      }
+    };
+    window.__diagnosticoLoginOnlineSistema=diagnosticoLoginOnline;
+    console.warn("Diagnostico login online Supabase:",diagnosticoLoginOnline,login.error);
+    return null;
+  }
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
   if(!sessao?.user?.id) return null;
@@ -13270,7 +13284,12 @@ window.entrarSistema = async function(){
     }
   }
   if(!usuario){
-    mensagemLoginProfissional("E-mail ou senha inválidos.");
+    const diag=window.__diagnosticoLoginOnlineSistema;
+    if(diag){
+      mensagemLoginProfissional(`Diagnostico login online: e-mail=${diag.emailEnviado} | senha.length=${diag.tamanhoSenha} | erro=${diag.erro.message || "sem mensagem"} | code=${diag.erro.code || "vazio"} | status=${diag.erro.status || "vazio"}`);
+    }else{
+      mensagemLoginProfissional("E-mail ou senha inválidos.");
+    }
     return;
   }
   if(!usuario.senhaHash) usuario.senhaHash=await senhaHashSistemaProfissional(email,senha);

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="sistema-clinica-versao" content="app-instalavel-2026-07-03">
+<meta name="sistema-clinica-versao" content="app-recuperado-pc-celular-2026-07-23">
 <meta name="theme-color" content="#b8893b">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -3544,10 +3544,6 @@ function entrarRapido(){
   verificarPlanoComercialAoEntrarSistema();
 }
 async function sairSistema(){
-  mostrarDiagnosticoClienteSupabaseSistema("sairSistema antes limpeza", {
-    clienteAntes: !!window.__clienteSupabaseSistema,
-    chaveAntes: window.__clienteSupabaseChave || "vazia"
-  });
   await limparSessaoAtualSemFecharAppSistema();
   try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
   window.usuarioLogadoSistema=null;
@@ -13589,45 +13585,8 @@ function limparClinicaOnlineLocalSistema(){
   if(campoClinic) campoClinic.value="";
   if(campoSenha) campoSenha.value="";
 }
-function mascararChaveDiagnosticoSupabaseSistema(valor){
-  const texto=String(valor || "vazia");
-  if(!texto || texto==="vazia") return "vazia";
-  if(texto.length<=12) return texto;
-  return texto.slice(0,4) + "..." + texto.slice(-4);
-}
-function mostrarDiagnosticoClienteSupabaseSistema(titulo, dados){
-  try{
-    const linhas=Object.keys(dados || {}).map(function(chave){
-      return chave + "=" + mascararChaveDiagnosticoSupabaseSistema(dados[chave]);
-    });
-    const mensagem=titulo + ": " + linhas.join(" | ");
-    console.log("[diagnostico cliente supabase]", mensagem, dados);
-    let caixa=document.getElementById("diagnosticoClienteSupabaseSistema");
-    if(!caixa && document.body){
-      caixa=document.createElement("div");
-      caixa.id="diagnosticoClienteSupabaseSistema";
-      caixa.style.cssText="position:fixed;left:10px;right:10px;bottom:10px;z-index:999999;background:#fff7ed;color:#7c2d12;border:1px solid #fed7aa;border-radius:12px;padding:10px;font:12px/1.35 Arial,sans-serif;white-space:pre-wrap;max-height:40vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.18)";
-      document.body.appendChild(caixa);
-    }
-    if(caixa){
-      caixa.textContent=(caixa.textContent ? caixa.textContent + "\n" : "") + mensagem;
-      caixa.textContent=caixa.textContent.slice(-4000);
-    }
-  }catch(erro){
-    console.log("[diagnostico cliente supabase erro]", erro);
-  }
-}
 function clienteSupabaseSistema(){
   const online=configOnlineSistema();
-  const chaveDiagnosticoClienteSupabaseSistema = String(online.supabaseUrl || "") + "|" + String(online.supabaseAnonKey || "");
-  mostrarDiagnosticoClienteSupabaseSistema("clienteSupabaseSistema inicio", {
-    existeCliente: !!window.__clienteSupabaseSistema,
-    chaveCliente: window.__clienteSupabaseChave || "vazia",
-    vaiReutilizar: !!(
-      window.__clienteSupabaseSistema &&
-      window.__clienteSupabaseChave === chaveDiagnosticoClienteSupabaseSistema
-    )
-  });
   if(!online.supabaseUrl || !online.supabaseAnonKey) return null;
   if(!window.supabase || !window.supabase.createClient) return null;
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
@@ -13665,10 +13624,6 @@ async function limparSessaoAtualSemFecharAppSistema(){
   window.__syncAutoSistema={};
   window.__clienteSupabaseSistema=null;
   window.__clienteSupabaseChave="";
-  mostrarDiagnosticoClienteSupabaseSistema("sairSistema depois limpeza", {
-    clienteDepois: !!window.__clienteSupabaseSistema,
-    chaveDepois: window.__clienteSupabaseChave || "vazia"
-  });
   window.__clinicScopeSistema="";
   window.usuarioLogadoSistema=null;
   removerBloqueioPlanoComercialSistema();

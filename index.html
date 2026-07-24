@@ -13134,6 +13134,34 @@ function usuarioConfigValidoLocal(u){
 function existeUsuarioConfigValidoLocal(conf){
   return Array.isArray(conf && conf.usuarios) && conf.usuarios.some(usuarioConfigValidoLocal);
 }
+function erroLoginSupabaseEhConexaoSistema(erro){
+  const msg=[
+    erro && erro.message,
+    erro && erro.name,
+    erro && erro.code,
+    erro && erro.status
+  ].filter(Boolean).join(" ");
+  return !navigator.onLine || /Failed to fetch|NetworkError|Load failed|fetch|network|timeout|timed out|demorou demais|AuthRetryableFetchError|ERR_NETWORK/i.test(msg);
+}
+function erroLoginSupabaseEhCredencialSistema(erro){
+  const msg=[
+    erro && erro.message,
+    erro && erro.name,
+    erro && erro.code,
+    erro && erro.status
+  ].filter(Boolean).join(" ");
+  return /Invalid login credentials|invalid_grant|email not confirmed|user not found|invalid/i.test(msg) || erro?.status===400 || erro?.status===401;
+}
+function erroLoginSupabaseSistema(erro,mensagemPadrao){
+  const e=erro instanceof Error ? erro : new Error(mensagemPadrao || "Falha no login online.");
+  if(erro && !(erro instanceof Error)){
+    e.original=erro;
+    e.message=erro.message || mensagemPadrao || e.message;
+  }
+  e.permiteLoginLocal=erroLoginSupabaseEhConexaoSistema(erro || e);
+  e.credencialInvalida=erroLoginSupabaseEhCredencialSistema(erro || e);
+  return e;
+}
 async function autenticarUsuarioConfigLocal(email,senha){
   const conf=configSistemaSeguro();
   const usuarios=Array.isArray(conf.usuarios)?conf.usuarios:[];
@@ -13155,7 +13183,12 @@ async function autenticarUsuarioConfigLocal(email,senha){
 async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   await limparSessaoOnlineParaNovoLoginSistema();
   const db=clienteSupabaseSistema();
-  if(!db) return null;
+  if(!db){
+    const erro=erroLoginSupabaseSistema(new Error("Supabase indisponível ou biblioteca não carregada."),"Supabase indisponível.");
+    erro.permiteLoginLocal=true;
+    erro.supabaseIndisponivel=true;
+    throw erro;
+  }
   try{
     const sessaoAtual=await db.auth.getSession();
     const emailAtual=emailNormalizadoSistema(sessaoAtual?.data?.session?.user?.email || "");
@@ -13168,9 +13201,11 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
   }
   const login=await db.auth.signInWithPassword({email,password:senha});
   if(login.error){
+    const erroClassificado=erroLoginSupabaseSistema(login.error,"Falha no login online.");
     const diagnosticoLoginOnline={
       emailEnviado:email,
       tamanhoSenha:String(senha || "").length,
+      tipo:erroClassificado.permiteLoginLocal ? "conexao" : "credencial",
       erro:{
         message:login.error.message || "",
         code:login.error.code || "",
@@ -13180,14 +13215,16 @@ async function autenticarUsuarioOnlineComoLocalSistema(email,senha){
     };
     window.__diagnosticoLoginOnlineSistema=diagnosticoLoginOnline;
     console.warn("Diagnostico login online Supabase:",diagnosticoLoginOnline,login.error);
-    return null;
+    throw erroClassificado;
   }
   const sessaoResp=await db.auth.getSession();
   const sessao=sessaoResp?.data?.session;
-  if(!sessao?.user?.id) return null;
+  if(!sessao?.user?.id) throw erroLoginSupabaseSistema(new Error("Login online sem sessão ativa."),"Login online sem sessão ativa.");
   const perfilResp=await db.from("profiles").select("clinic_id,full_name,role,active").eq("id",sessao.user.id).maybeSingle();
-  if(perfilResp.error || !perfilResp.data || perfilResp.data.active===false) return null;
+  if(perfilResp.error) throw erroLoginSupabaseSistema(perfilResp.error,"Erro ao carregar profile online.");
+  if(!perfilResp.data || perfilResp.data.active===false) throw erroLoginSupabaseSistema(new Error("Profile online não encontrado ou inativo."),"Profile online não encontrado ou inativo.");
   const perfil=perfilResp.data;
+  limparEscopoClinicaSistema();
   if(perfil.clinic_id) ativarEscopoClinicaSistema(perfil.clinic_id);
   let nomeClinica="Clínica online";
   if(perfil.clinic_id){
@@ -13271,33 +13308,41 @@ window.entrarSistema = async function(){
   window.__diagnosticoLoginOnlineSistema=null;
   try{await limparSessaoOnlineParaNovoLoginSistema();}catch(e){console.warn("Limpeza antes do login:",e);}
   limparEscopoClinicaSistema();
-  const escopoLocal=procurarClinicaPorEmailSistema(email);
-  if(escopoLocal) ativarEscopoClinicaSistema(escopoLocal);
+  let erroOnline=null;
   try{
-    const confLocal=configSistemaSeguro();
-    if(existeUsuarioConfigValidoLocal(confLocal)){
-      usuario=await autenticarUsuarioConfigLocal(email,senha);
-    }
+    usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
   }catch(e){
-    console.warn("Login local falhou, tentando acesso online:",e);
+    erroOnline=e;
+    console.warn("Login online não concluído:",e);
   }
-  if(!usuario){
+  if(!usuario && erroOnline && erroOnline.permiteLoginLocal){
     try{
-      usuario=await autenticarUsuarioOnlineComoLocalSistema(email,senha);
+      const escopoLocal=procurarClinicaPorEmailSistema(email);
+      if(escopoLocal) ativarEscopoClinicaSistema(escopoLocal);
+      const confLocal=configSistemaSeguro();
+      if(existeUsuarioConfigValidoLocal(confLocal)){
+        usuario=await autenticarUsuarioConfigLocal(email,senha);
+      }
     }catch(e){
-      console.warn("Login online falhou depois do local:",e);
+      console.warn("Login local offline falhou:",e);
     }
   }
-  if(!usuario){
+  if(!usuario && erroOnline && erroOnline.permiteLoginLocal){
     const conf=configSistemaSeguro();
     if(!existeUsuarioConfigValidoLocal(conf)){
       usuario=await criarPrimeiroAdministradorLocal(email,senha);
-      mensagemLoginProfissional("Administrador criado com sucesso.");
+      mensagemLoginProfissional("Administrador local criado para uso offline.");
     }
   }
   if(!usuario){
     const diag=window.__diagnosticoLoginOnlineSistema;
-    if(diag){
+    if(erroOnline && erroOnline.credencialInvalida){
+      mensagemLoginProfissional("E-mail ou senha inválidos no acesso online.");
+    }else if(erroOnline && erroOnline.supabaseIndisponivel){
+      mensagemLoginProfissional("Supabase indisponível. Não foi possível confirmar o login online.");
+    }else if(erroOnline && erroOnline.permiteLoginLocal){
+      mensagemLoginProfissional("Sem conexão com o online e o acesso local não conferiu.");
+    }else if(diag){
       mensagemLoginProfissional(`Diagnostico login online: e-mail=${diag.emailEnviado} | senha.length=${diag.tamanhoSenha} | erro=${diag.erro.message || "sem mensagem"} | code=${diag.erro.code || "vazio"} | status=${diag.erro.status || "vazio"}`);
     }else{
       mensagemLoginProfissional("E-mail ou senha inválidos.");
@@ -13604,54 +13649,79 @@ function clienteSupabaseSistema(){
   if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
   window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
   window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"gep_supabase_auth_sistema"}});
+  try{
+    if(window.__supabaseAuthListenerSistema?.data?.subscription){
+      window.__supabaseAuthListenerSistema.data.subscription.unsubscribe();
+    }
+    const chaveListener=window.__clienteSupabaseChave;
+    window.__supabaseAuthListenerSistema=window.__clienteSupabaseSistema.auth.onAuthStateChange((event)=>{
+      if(chaveListener!==window.__clienteSupabaseChave) return;
+      if(event==="SIGNED_OUT"){
+        try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
+        window.usuarioLogadoSistema=null;
+        limparEscopoClinicaSistema();
+        try{limparClinicaOnlineLocalSistema();}catch(e){}
+      }
+    });
+  }catch(e){
+    console.warn("Listener de autenticação Supabase não iniciado:",e);
+  }
   return window.__clienteSupabaseSistema;
 }
 async function limparSessaoOnlineParaNovoLoginSistema(){
-  try{window.__diagnosticoLoginOnlineSistema=null;}catch(e){}
   try{
-    const db=window.__clienteSupabaseSistema || clienteSupabaseSistema();
-    if(db && db.auth) await db.auth.signOut();
-  }catch(e){
-    console.warn("Saida online antes do novo login:",e);
-  }
+    window.__diagnosticoLoginOnlineSistema = null;
+  }catch(e){}
+
   try{
-    const limparAuthStorageSistema=(storage)=>{
-      if(!storage) return;
-      const prefixos=["gep_supabase_auth_sistema","sb-","supabase.auth.token"];
-      for(let i=storage.length-1;i>=0;i--){
-        const chave=storage.key(i);
-        if(chave && prefixos.some(prefixo=>chave===prefixo || chave.indexOf(prefixo)===0 || chave.includes(prefixo))) storage.removeItem(chave);
-      }
-    };
-    limparAuthStorageSistema(localStorage);
-    sessionStorage.clear();
-  }catch(e){
-    console.warn("Limpeza local antes do novo login:",e);
-  }
-  window.__clienteSupabaseSistema=null;
-  window.__clienteSupabaseChave="";
-}
-function limparStorageLogoutPreservandoDadosSistema(){
-  const dadosApp=[];
-  try{
-    for(let i=0;i<localStorage.length;i++){
-      const chave=localStorage.key(i);
-      if(chave && chave.startsWith("gepV2_") && chave!=="gepV2_usuarioLogado"){
-        dadosApp.push([chave,localStorage.getItem(chave)]);
+    const db =
+      window.__clienteSupabaseSistema ||
+      (typeof clienteSupabaseSistema === "function"
+        ? clienteSupabaseSistema()
+        : null);
+
+    if(db?.auth){
+      const { error } = await db.auth.signOut({ scope: "local" });
+
+      if(error){
+        console.warn("Erro ao remover sessão Supabase:", error);
       }
     }
   }catch(e){
-    console.warn("Backup temporario antes do clear:",e);
+    console.warn("Erro ao limpar sessão antes do login:", e);
   }
-  try{localStorage.clear();}catch(e){console.warn("localStorage.clear no logout:",e);}
+
   try{
-    dadosApp.forEach(([chave,valor])=>{
-      if(valor!==null) localStorage.setItem(chave,valor);
-    });
+    limparEscopoClinicaSistema();
+    limparChavesSessaoUsuarioSistema();
+    limparCamposOnlineSessaoSistema();
   }catch(e){
-    console.warn("Restauracao dos dados locais apos clear:",e);
+    console.warn("Erro ao limpar escopo da clínica:", e);
   }
-  try{sessionStorage.clear();}catch(e){console.warn("sessionStorage.clear no logout:",e);}
+
+  window.__clienteSupabaseSistema=null;
+  window.__clienteSupabaseChave="";
+}
+function limparChavesSessaoUsuarioSistema(){
+  try{
+    sessionStorage.removeItem("gepV2_usuarioLogado");
+    sessionStorage.removeItem("gep_supabase_auth_sistema");
+    localStorage.removeItem("gep_supabase_auth_sistema");
+    window.usuarioLogadoSistema=null;
+    limparEscopoClinicaSistema();
+  }catch(e){console.warn("Limpeza de chaves da sessão:",e);}
+}
+function limparCamposOnlineSessaoSistema(){
+  try{
+    const conf=configSistemaSeguro();
+    conf.online=conf.online || {};
+    conf.online.clinicId="";
+    conf.online.email="";
+    conf.online.senha="";
+    salvarConfigSistemaSeguro(conf);
+  }catch(e){
+    console.warn("Limpeza dos campos online da sessão:",e);
+  }
 }
 async function limparSessaoAtualSemFecharAppSistema(){
   const db=window.__clienteSupabaseSistema || clienteSupabaseSistema();
@@ -13671,7 +13741,8 @@ async function limparSessaoAtualSemFecharAppSistema(){
     };
     limparAuthStorageSistema(localStorage);
     limparAuthStorageSistema(sessionStorage);
-    limparStorageLogoutPreservandoDadosSistema();
+    limparChavesSessaoUsuarioSistema();
+    limparCamposOnlineSessaoSistema();
   }catch(e){
     console.warn("Limpeza da autenticacao online:",e);
   }
@@ -13688,16 +13759,7 @@ async function limparSessaoAtualSemFecharAppSistema(){
   removerBloqueioPlanoComercialSistema();
   sessionStorage.removeItem("gepV2_usuarioLogado");
   limparEscopoClinicaSistema();
-  try{
-    const conf=configSistemaSeguro();
-    conf.online=conf.online || {};
-    conf.online.supabaseUrl=limparUrlSupabaseSistema(conf.online.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
-    if(chaveSupabaseComercialSistema()) conf.online.supabaseAnonKey=chaveSupabaseComercialSistema();
-    conf.online.clinicId="";
-    conf.online.email="";
-    conf.online.senha="";
-    salvarConfigSistemaSeguro(conf);
-  }catch(e){}
+  try{limparCamposOnlineSessaoSistema();}catch(e){}
   try{
     ["onlineClinicId","onlineEmailSistema","onlineSenhaSistema"].forEach(id=>{
       const campo=document.getElementById(id);
@@ -13815,8 +13877,9 @@ async function entrarOnlineSistema(){
 async function sairOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
   const db=clienteSupabaseSistema();
-  if(db) await db.auth.signOut();
-  limparStorageLogoutPreservandoDadosSistema();
+  if(db) await db.auth.signOut({ scope:"local" });
+  limparChavesSessaoUsuarioSistema();
+  limparEscopoClinicaSistema();
   window.__clienteSupabaseSistema=null;
   window.__clienteSupabaseChave="";
   removerBloqueioPlanoComercialSistema();

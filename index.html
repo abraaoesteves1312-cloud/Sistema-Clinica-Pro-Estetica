@@ -13143,6 +13143,15 @@ function erroLoginSupabaseEhConexaoSistema(erro){
   ].filter(Boolean).join(" ");
   return !navigator.onLine || /Failed to fetch|NetworkError|Load failed|fetch|network|timeout|timed out|demorou demais|AuthRetryableFetchError|ERR_NETWORK/i.test(msg);
 }
+function erroLoginSupabaseEhChaveInvalidaSistema(erro){
+  const msg=[
+    erro && erro.message,
+    erro && erro.name,
+    erro && erro.code,
+    erro && erro.status
+  ].filter(Boolean).join(" ");
+  return /Invalid API key|invalid api key|apikey|api key/i.test(msg);
+}
 function erroLoginSupabaseEhCredencialSistema(erro){
   const msg=[
     erro && erro.message,
@@ -13150,7 +13159,7 @@ function erroLoginSupabaseEhCredencialSistema(erro){
     erro && erro.code,
     erro && erro.status
   ].filter(Boolean).join(" ");
-  return /Invalid login credentials|invalid_grant|email not confirmed|user not found|invalid/i.test(msg) || erro?.status===400 || erro?.status===401;
+  return !erroLoginSupabaseEhChaveInvalidaSistema(erro) && (/Invalid login credentials|invalid_grant|email not confirmed|user not found/i.test(msg) || erro?.status===400 || erro?.status===401);
 }
 function erroLoginSupabaseSistema(erro,mensagemPadrao){
   const e=erro instanceof Error ? erro : new Error(mensagemPadrao || "Falha no login online.");
@@ -13159,6 +13168,7 @@ function erroLoginSupabaseSistema(erro,mensagemPadrao){
     e.message=erro.message || mensagemPadrao || e.message;
   }
   e.permiteLoginLocal=erroLoginSupabaseEhConexaoSistema(erro || e);
+  e.configuracaoInvalida=erroLoginSupabaseEhChaveInvalidaSistema(erro || e);
   e.credencialInvalida=erroLoginSupabaseEhCredencialSistema(erro || e);
   return e;
 }
@@ -13336,8 +13346,10 @@ window.entrarSistema = async function(){
   }
   if(!usuario){
     const diag=window.__diagnosticoLoginOnlineSistema;
-    if(erroOnline && erroOnline.credencialInvalida){
-      mensagemLoginProfissional("E-mail ou senha inválidos no acesso online.");
+    if(erroOnline && erroOnline.configuracaoInvalida){
+      mensagemLoginProfissional("Configuração da conexão online inválida. Contate o suporte.");
+    }else if(erroOnline && erroOnline.credencialInvalida){
+      mensagemLoginProfissional("E-mail ou senha inválidos.");
     }else if(erroOnline && erroOnline.supabaseIndisponivel){
       mensagemLoginProfissional("Supabase indisponível. Não foi possível confirmar o login online.");
     }else if(erroOnline && erroOnline.permiteLoginLocal){
@@ -13502,6 +13514,18 @@ const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="sb_publishable_hVHPWhVbjd4U51HFpE153g
 function chaveSupabaseComercialSistema(){
   return limparChaveSupabaseSistema(SUPABASE_ANON_KEY_COMERCIAL_SISTEMA);
 }
+function resumoChaveSupabaseSistema(valor){
+  const chave=limparChaveSupabaseSistema(valor);
+  if(!chave) return {inicio:"",fim:"",tamanho:0,vazia:true,temEspacos:false,serviceRole:false};
+  return {
+    inicio:chave.slice(0,8),
+    fim:chave.slice(-5),
+    tamanho:chave.length,
+    vazia:false,
+    temEspacos:/\s/.test(String(valor || "")),
+    serviceRole:/service_role/i.test(chave)
+  };
+}
 
 function usuarioSessaoAtualSistema(){
   if(window.usuarioLogadoSistema) return window.usuarioLogadoSistema;
@@ -13530,8 +13554,16 @@ function ajustarOnlineAoUsuarioAtualSistema(online){
     if(email && emailAnterior && emailAnterior!==email) ajustado.senha="";
   }
   ajustado.supabaseUrl=limparUrlSupabaseSistema(ajustado.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA);
-  if(ajustado.supabaseAnonKey) ajustado.supabaseAnonKey=limparChaveSupabaseSistema(ajustado.supabaseAnonKey);
-  else if(chaveSupabaseComercialSistema()) ajustado.supabaseAnonKey=chaveSupabaseComercialSistema();
+  const chaveCanonica=chaveSupabaseComercialSistema();
+  const chaveSalva=limparChaveSupabaseSistema(ajustado.supabaseAnonKey);
+  if(chaveCanonica){
+    if(chaveSalva && chaveSalva!==chaveCanonica){
+      console.warn("Chave Supabase local ignorada; usando chave pública canônica do projeto.",resumoChaveSupabaseSistema(chaveSalva));
+    }
+    ajustado.supabaseAnonKey=chaveCanonica;
+  }else{
+    ajustado.supabaseAnonKey=chaveSalva;
+  }
   return ajustado;
 }
 
@@ -13582,7 +13614,7 @@ function coletarConfigOnlineSistema(){
   return ajustarOnlineAoUsuarioAtualSistema({
     ativo:!!document.getElementById("onlineAtivoSistema")?.checked,
     supabaseUrl:limparUrlSupabaseSistema(document.getElementById("onlineSupabaseUrl")?.value || anterior.supabaseUrl || SUPABASE_URL_CORRETA_SISTEMA),
-    supabaseAnonKey:limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || chaveSupabaseComercialSistema()),
+    supabaseAnonKey:chaveSupabaseComercialSistema() || limparChaveSupabaseSistema(document.getElementById("onlineSupabaseAnonKey")?.value || anterior.supabaseAnonKey || ""),
     clinicId:(document.getElementById("onlineClinicId")?.value || anterior.clinicId || "").trim(),
     email:(document.getElementById("onlineEmailSistema")?.value || anterior.email || "").trim().toLowerCase(),
     senha:""
@@ -13646,9 +13678,12 @@ function clienteSupabaseSistema(){
   const online=configOnlineSistema();
   if(!online.supabaseUrl || !online.supabaseAnonKey) return null;
   if(!window.supabase || !window.supabase.createClient) return null;
-  if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===online.supabaseUrl+"|"+online.supabaseAnonKey) return window.__clienteSupabaseSistema;
-  window.__clienteSupabaseChave=online.supabaseUrl+"|"+online.supabaseAnonKey;
-  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,online.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"gep_supabase_auth_sistema"}});
+  const chaveCanonica=chaveSupabaseComercialSistema() || limparChaveSupabaseSistema(online.supabaseAnonKey);
+  if(!chaveCanonica) return null;
+  const chaveCliente=online.supabaseUrl+"|"+chaveCanonica;
+  if(window.__clienteSupabaseSistema && window.__clienteSupabaseChave===chaveCliente) return window.__clienteSupabaseSistema;
+  window.__clienteSupabaseChave=chaveCliente;
+  window.__clienteSupabaseSistema=window.supabase.createClient(online.supabaseUrl,chaveCanonica,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:"gep_supabase_auth_sistema"}});
   try{
     if(window.__supabaseAuthListenerSistema?.data?.subscription){
       window.__supabaseAuthListenerSistema.data.subscription.unsubscribe();
@@ -14628,6 +14663,12 @@ function textoErroOnlineSistema(e){
   if(e && e.code) partes.push("Código: "+e.code);
   if(e && e.status) partes.push("Status: "+e.status);
   const msg=partes.filter(Boolean).join(" | ") || String(e || "erro desconhecido");
+  if(/Invalid API key|invalid api key|apikey|api key/i.test(msg)){
+    return "Configuração da conexão online inválida. Contate o suporte.";
+  }
+  if(/Invalid login credentials/i.test(msg)){
+    return "E-mail ou senha inválidos.";
+  }
   if(/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)){
     return `Falha de rede: o navegador não conseguiu conversar com o Supabase. Confira se o campo URL está exatamente assim: ${SUPABASE_URL_CORRETA_SISTEMA}. Se estiver no celular, feche e abra o app depois de atualizar.`;
   }

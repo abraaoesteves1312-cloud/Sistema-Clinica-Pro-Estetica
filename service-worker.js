@@ -1,4 +1,4 @@
-const CACHE_NAME = "gestao-estetica-pro-recuperado-pc-celular-logout-clear-v20260723";
+const CACHE_NAME = "gestao-estetica-pro-recuperado-user-switch-supabase-v20260801";
 const CORE_ASSETS = [
   "./",
   "./index.html",

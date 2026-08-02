@@ -3544,14 +3544,20 @@ function entrarRapido(){
   verificarPlanoComercialAoEntrarSistema();
 }
 async function sairSistema(){
-  await limparSessaoAtualSemFecharAppSistema();
-  try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
-  window.usuarioLogadoSistema=null;
-  window.__clinicScopeSistema="";
-  const destino=new URL(window.location.href);
-  destino.searchParams.set("v",(window.GEP_APP_VERSION || "2026-08-01")+"-logout-"+Date.now());
-  destino.hash="";
-  window.location.replace(destino.toString());
+  try{
+    const db=window.__clienteSupabaseSistema || (typeof clienteSupabaseSistema==="function" ? clienteSupabaseSistema() : null);
+    if(db?.auth){
+      const {error}=await db.auth.signOut();
+      if(error) console.warn("Aviso ao deslogar no Supabase:",error.message || error);
+    }
+  }catch(erro){
+    console.error("Erro inesperado durante o logout:",erro);
+  }finally{
+    redefinirGlobaisUsuarioLogoutSistema();
+    try{localStorage.clear();}catch(e){console.warn("Nao foi possivel limpar localStorage:",e);}
+    try{sessionStorage.clear();}catch(e){console.warn("Nao foi possivel limpar sessionStorage:",e);}
+    window.location.replace("index.html");
+  }
 }
 function abrirTela(id,b){ if(id==="evolucao"){id="prontuario";prontuarioAbaAtual="evolucao";} if(id==="fotos"){id="prontuario";prontuarioAbaAtual="fotos";} if(!usuarioTemAcessoTela(id)){alert("Este usuario nao tem permissao para acessar esta area.");return;} if(id==='prontuario'){setTimeout(()=>{try{inserirBotaoEditarNoProntuario();}catch(e){}},200)}  if(id==="prontuario"){setTimeout(()=>{try{renderCobrancasProntuario();}catch(e){}},150)} document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById(id).classList.add("active");if(id==="financeiro"){try{renderFinanceiroPro();}catch(e){}}document.querySelectorAll(".nav button").forEach(x=>x.classList.remove("active"));if(b)b.classList.add("active");tituloTela.innerText=b?b.innerText.replace(/[🏠👤🗂️📝📅📋📄💉📸💰📦📊⚙️]/g,"").trim():id;atualizarTudo();aplicarPermissoesUsuarioAtual();if(id==="agenda"){setTimeout(limparPacienteAgendaAoAbrir,80)}if(id==="configuracoes"){setTimeout(renderConfig,80)}if(id==="relatorios"){setTimeout(()=>{gerarRelatorio();limparPacienteRelatorio();},80)}}
 function abrirCentralPacienteAba(aba){
@@ -13545,6 +13551,25 @@ function dadosOnlineDoUsuarioAtualSistema(){
   return {email,clinicId};
 }
 
+function redefinirGlobaisUsuarioLogoutSistema(){
+  window.usuarioLogadoSistema=null;
+  window.__usuarioSupabaseIdSistema=null;
+  window.__userIdSistema=null;
+  window.__supabaseUserIdSistema=null;
+  window.__clinicScopeSistema=null;
+  window.__clinicIdSistema=null;
+  window.__onlineClinicIdSistema=null;
+  window.__perfilUsuarioSistema=null;
+  window.__perfilAtualSistema=null;
+  window.__permissoesUsuarioSistema=null;
+  window.__acessosUsuarioSistema=null;
+  window.__diagnosticoLoginOnlineSistema=null;
+  window.__trocaUsuarioLoginSistema=false;
+  window.__clienteSupabaseSistema=null;
+  window.__clienteSupabaseChave="";
+  try{removerBloqueioPlanoComercialSistema();}catch(e){}
+}
+
 function ajustarOnlineAoUsuarioAtualSistema(online){
   const ajustado={...(online || {})};
   const sessao=corrigirClinicaUsuarioSessaoSistema(usuarioSessaoAtualSistema());
@@ -13698,9 +13723,7 @@ function clienteSupabaseSistema(){
       if(chaveListener!==window.__clienteSupabaseChave) return;
       if(event==="SIGNED_OUT"){
         if(window.__trocaUsuarioLoginSistema) return;
-        try{sessionStorage.removeItem("gepV2_usuarioLogado");}catch(e){}
-        window.usuarioLogadoSistema=null;
-        limparEscopoClinicaSistema();
+        redefinirGlobaisUsuarioLogoutSistema();
         try{limparClinicaOnlineLocalSistema();}catch(e){}
       }
     });

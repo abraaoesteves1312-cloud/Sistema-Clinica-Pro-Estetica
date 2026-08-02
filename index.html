@@ -3567,7 +3567,7 @@ function abrirCentralPacienteAba(aba){
   abrirPorId("prontuario");
   setTimeout(()=>{try{renderProntuarioProfissional();}catch(e){}},80);
 }
-function pacienteAtivoSistema(p){return !p || (p.ativo!==false && p.active!==false && p.status!=="inativo")}
+function pacienteAtivoSistema(p){return !p || (p.ativo!==false && p.status!=="inativo")}
 function pacienteInativoSistema(p){return !!p && (p.ativo===false || p.active===false || p.status==="inativo")}
 function optsPac(){let p=get("pacientes").filter(pacienteAtivoSistema);return p.map(x=>`<option value="${x.nome}">${x.nome}</option>`).join("")||"<option>Nenhum paciente</option>"}
 function optsProc(){return procedimentos.map(x=>`<option value="${x}">${x}</option>`).join("")}

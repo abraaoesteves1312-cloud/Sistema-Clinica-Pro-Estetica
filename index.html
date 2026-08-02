@@ -2187,6 +2187,8 @@ body > #resultadoPacientes{
       <button class="btn-light" type="button" onclick="alternarGerenciamentoPacientesPro()">Gerenciar duplicados</button>
       <input id="buscaGestaoPacientes" type="hidden" value="">
       <div id="listaPacientes" class="lista-gestao-pacientes"></div>
+      <button id="btnPacientesArquivadosSistema" class="btn-light" type="button" onclick="alternarPacientesArquivadosSistema()">Ver pacientes arquivados</button>
+      <div id="listaPacientesArquivadosSistema" class="lista-gestao-pacientes" style="display:none"></div>
     </section>
     <section id="formCadastroPacientePro" class="cadastro-paciente-form-pro">
     <div class="editar-cadastro-box">
@@ -3565,7 +3567,9 @@ function abrirCentralPacienteAba(aba){
   abrirPorId("prontuario");
   setTimeout(()=>{try{renderProntuarioProfissional();}catch(e){}},80);
 }
-function optsPac(){let p=get("pacientes");return p.map(x=>`<option value="${x.nome}">${x.nome}</option>`).join("")||"<option>Nenhum paciente</option>"}
+function pacienteAtivoSistema(p){return !p || (p.ativo!==false && p.active!==false && p.status!=="inativo")}
+function pacienteInativoSistema(p){return !!p && (p.ativo===false || p.active===false || p.status==="inativo")}
+function optsPac(){let p=get("pacientes").filter(pacienteAtivoSistema);return p.map(x=>`<option value="${x.nome}">${x.nome}</option>`).join("")||"<option>Nenhum paciente</option>"}
 function optsProc(){return procedimentos.map(x=>`<option value="${x}">${x}</option>`).join("")}
 function atualizarSelects(){[prontPaciente,anaPaciente,agePaciente,evoPaciente,autPaciente,botPaciente].forEach(s=>s.innerHTML=optsPac());if(typeof finPaciente!=="undefined"&&finPaciente)finPaciente.innerHTML='<option value="">Clínica / despesa geral</option>'+optsPac();[ageProc,evoProc,autProc].forEach(s=>s.innerHTML=optsProc());preencherSelectHorariosAgenda()}
 function buscarCEP(){
@@ -3600,12 +3604,23 @@ function salvarPaciente(){
   if(escopoPaciente && escopoPaciente!==escopoAdminGeralSistema) paciente.clinicScope=escopoPaciente;
 
   if(!paciente.nome){
-    alert("Informe o nome do paciente.");
+    avisoCadastroPacienteSistema("Informe o nome do paciente.");
+    return false;
+  }
+
+  if(!numerosPacienteSistema(paciente.tel) && !numerosPacienteSistema(paciente.whats)){
+    avisoCadastroPacienteSistema("Informe pelo menos um telefone ou WhatsApp do paciente.");
+    return false;
+  }
+
+  const duplicidade = validarDuplicidadePacienteSistema(paciente,pacienteEditandoId,p);
+  if(duplicidade){
+    avisoCadastroPacienteSistema(duplicidade);
     return false;
   }
 
   if(pacienteEditandoId){
-    p = p.map(x => Number(x.id) === Number(pacienteEditandoId) ? {...x, ...paciente, id:x.id} : x);
+    p = p.map(x => String(x.id || "") === String(pacienteEditandoId || "") ? {...x, ...paciente, id:x.id} : x);
     set("pacientes", p);
     
     limparModoEdicaoCadastro();
@@ -3735,7 +3750,7 @@ function buscarPacienteAnamnesePro(){
   if(!campo || !area) return;
   const termo = (campo.value || "").toLowerCase().trim();
   if(!termo){ area.innerHTML = ""; return; }
-  const lista = get("pacientes").filter(p =>
+  const lista = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||
@@ -3764,7 +3779,7 @@ function buscarPacienteAgendaPro(){
   if(!campo || !area) return;
   const termo = (campo.value || "").toLowerCase().trim();
   if(!termo){ area.innerHTML = ""; return; }
-  const lista = get("pacientes").filter(p =>
+  const lista = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||
@@ -5887,7 +5902,7 @@ function buscarPacienteFotosPro(){
   if(!campo || !area) return;
   const termo = (campo.value || "").toLowerCase().trim();
   if(!termo){ area.innerHTML = ""; return; }
-  const lista = get("pacientes").filter(p =>
+  const lista = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||
@@ -8103,7 +8118,8 @@ function renderPacientesLGPD(){
   const painel = area.closest(".gestao-pacientes-pro");
   const painelAberto = painel?.classList.contains("gestao-pacientes-admin-aberto");
   const busca = (document.getElementById("buscaGestaoPacientes")?.value || "").toLowerCase().trim();
-  const pacientes = get("pacientes");
+  const todosPacientes = get("pacientes");
+  const pacientes = todosPacientes.filter(pacienteAtivoSistema);
   const normalizar = valor => String(valor || "").toLowerCase().replace(/\s+/g," ").trim();
   const somenteNumeros = valor => String(valor || "").replace(/\D/g,"");
   const total = document.getElementById("totalGestaoPacientes");
@@ -8113,12 +8129,14 @@ function renderPacientesLGPD(){
     area.innerHTML = "";
     return;
   }
-  const filtrados = pacientes.map((p,index)=>({p,index})).filter(({p}) =>
-    !busca ||
-    normalizar(p.nome).includes(busca) ||
-    normalizar(p.cpf).includes(busca) ||
-    normalizar(p.tel).includes(busca) ||
-    normalizar(p.whats).includes(busca)
+  const filtrados = todosPacientes.map((p,index)=>({p,index})).filter(({p}) =>
+    pacienteAtivoSistema(p) && (
+      !busca ||
+      normalizar(p.nome).includes(busca) ||
+      normalizar(p.cpf).includes(busca) ||
+      normalizar(p.tel).includes(busca) ||
+      normalizar(p.whats).includes(busca)
+    )
   );
   area.innerHTML = filtrados.map(({p,index})=>{
     const mesmoNome = pacientes.filter(x=>normalizar(x.nome) && normalizar(x.nome)===normalizar(p.nome)).length;
@@ -8132,10 +8150,11 @@ function renderPacientesLGPD(){
       </div>
       <div class="gestao-paciente-acoes">
         <button class="btn-light" onclick="editarCadastroPacienteGestao(${index})">Editar</button>
-        <button class="btn-excluir-cadastro" onclick="excluirCadastroPacienteGestao(${index})">Excluir cadastro</button>
+        <button class="btn-excluir-cadastro" onclick="excluirCadastroPacienteGestao(${index})">Arquivar cadastro</button>
       </div>
     </div>`;
   }).join("") || "<div class='prontuario-vazio'>Nenhum cadastro encontrado.</div>";
+  try{renderPacientesArquivadosSistema();}catch(e){}
 }
 
 function alternarGerenciamentoPacientesPro(){
@@ -8147,13 +8166,49 @@ function alternarGerenciamentoPacientesPro(){
   renderPacientesLGPD();
 }
 
+function dataArquivamentoPacienteSistema(p){
+  const valor = p?.arquivadoEm || p?.dataArquivamento || p?.updatedAt || p?.updated_at || "";
+  if(!valor) return "-";
+  try{
+    const data = new Date(valor);
+    if(!isNaN(data.getTime())) return data.toLocaleDateString("pt-BR");
+  }catch(e){}
+  return String(valor);
+}
+
+function alternarPacientesArquivadosSistema(){
+  const area = document.getElementById("listaPacientesArquivadosSistema");
+  const botao = document.getElementById("btnPacientesArquivadosSistema");
+  if(!area) return;
+  const abrir = area.style.display === "none" || !area.style.display;
+  area.style.display = abrir ? "grid" : "none";
+  if(botao) botao.innerText = abrir ? "Ocultar pacientes arquivados" : "Ver pacientes arquivados";
+  if(abrir) renderPacientesArquivadosSistema();
+}
+
+function renderPacientesArquivadosSistema(){
+  const area = document.getElementById("listaPacientesArquivadosSistema");
+  if(!area || area.style.display === "none") return;
+  const arquivados = get("pacientes").map((p,index)=>({p,index})).filter(({p})=>pacienteInativoSistema(p));
+  area.innerHTML = arquivados.map(({p,index})=>`
+    <div class="gestao-paciente-item">
+      <div>
+        <b>${escapeHtmlText(p.nome || "Paciente sem nome")}</b>
+        <small>Telefone: ${escapeHtmlText(p.whats || p.tel || "-")} · Arquivado em: ${escapeHtmlText(dataArquivamentoPacienteSistema(p))}</small>
+      </div>
+      <div class="gestao-paciente-acoes">
+        <button class="btn-main" onclick="reativarPacienteArquivadoSistema(${index})">Reativar</button>
+      </div>
+    </div>`).join("") || "<div class='prontuario-vazio'>Nenhum paciente arquivado nesta clínica.</div>";
+}
+
 function referenciaPacienteBusca(p){
   return encodeURIComponent(String((p && p.id) || (p && p.nome) || "")).replace(/'/g,"%27");
 }
 
 function resolverNomePacienteBusca(ref){
   const valor = decodeURIComponent(ref || "");
-  const pacientes = get("pacientes");
+  const pacientes = get("pacientes").filter(pacienteAtivoSistema);
   const paciente = pacientes.find(p => String(p.id || "") === valor) || pacientes.find(p => (p.nome || "") === valor);
   return paciente?.nome || valor;
 }
@@ -8166,7 +8221,7 @@ function renderLocalizarPacienteRapido(){
   const termoOriginal = campo.value || "";
   const termo = termoOriginal.toLowerCase().trim();
   const termoNumeros = termoOriginal.replace(/\D/g,"");
-  const pacientes = get("pacientes");
+  const pacientes = get("pacientes").filter(pacienteAtivoSistema);
   const normalizar = valor => String(valor || "").toLowerCase().replace(/\s+/g," ").trim();
   const numeros = valor => String(valor || "").replace(/\D/g,"");
 
@@ -8219,7 +8274,7 @@ function renderLocalizarPacienteRapido(){
         <div class="localizador-paciente-acoes">
           <button class="btn-main" onclick="abrirPacienteLocalizadoRef('${ref}','prontuario')">Abrir central</button>
           <button class="btn-light" onclick="abrirPacienteLocalizadoRef('${ref}','agenda')">Agendar</button>
-          ${duplicado ? `<button class="btn-excluir-cadastro" onclick="excluirCadastroPacientePorRef('${ref}')">Excluir duplicado</button>` : ""}
+          ${duplicado ? `<button class="btn-excluir-cadastro" onclick="excluirCadastroPacientePorRef('${ref}')">Arquivar duplicado</button>` : ""}
         </div>
       </div>`;
   }).join("");
@@ -8229,15 +8284,18 @@ function excluirCadastroPacientePorRef(ref){
   const nome = resolverNomePacienteBusca(ref);
   const pacientes = get("pacientes");
   const valor = decodeURIComponent(ref || "");
-  const index = pacientes.findIndex(p=>String(p.id||"")===valor) >= 0 ? pacientes.findIndex(p=>String(p.id||"")===valor) : pacientes.findIndex(p=>(p.nome||"")===nome);
+  const indexPorId = pacientes.findIndex(p=>pacienteAtivoSistema(p) && String(p.id||"")===valor);
+  const index = indexPorId >= 0 ? indexPorId : pacientes.findIndex(p=>pacienteAtivoSistema(p) && (p.nome||"")===nome);
   if(index < 0){alert("Cadastro não encontrado para excluir.");return;}
   const p = pacientes[index];
-  if(!confirm(`Excluir o cadastro duplicado de "${p.nome || nome}"?\n\nO prontuário e os históricos clínicos não serão apagados.`)) return;
-  pacientes.splice(index,1);
+  if(!confirm(`Arquivar o cadastro duplicado de "${p.nome || nome}"?\n\nO prontuário e os históricos clínicos não serão apagados.`)) return;
+  pacientes[index]={...p,ativo:false,active:false,status:"inativo",arquivadoEm:new Date().toISOString()};
   set("pacientes",pacientes);
+  registrarInativacaoPacienteOnlineSistema({...pacientes[index]});
   try{ atualizarTudo(); }catch(e){}
   try{ renderLocalizarPacienteRapido(); }catch(e){}
   try{ renderPacientesLGPD(); }catch(e){}
+  try{ renderPacientesArquivadosSistema(); }catch(e){}
 }
 
 function abrirPacienteLocalizadoRef(ref,destino){
@@ -8278,12 +8336,40 @@ function excluirCadastroPacienteGestao(index){
   const p=pacientes[index];
   if(!p)return;
   const nome=p.nome || "Paciente sem nome";
-  if(!confirm(`Excluir somente o cadastro de "${nome}"?\n\nO histórico clínico será preservado para evitar perda acidental de informações.`))return;
-  pacientes.splice(index,1);
+  if(!confirm(`Arquivar somente o cadastro de "${nome}"?\n\nO histórico clínico será preservado para evitar perda acidental de informações.`))return;
+  pacientes[index]={...p,ativo:false,active:false,status:"inativo",arquivadoEm:new Date().toISOString()};
   set("pacientes",pacientes);
+  registrarInativacaoPacienteOnlineSistema({...pacientes[index]});
   if(pacienteEditandoId===p.id)limparModoEdicaoCadastro();
   atualizarTudo();
   renderPacientesLGPD();
+  renderPacientesArquivadosSistema();
+}
+
+async function reativarPacienteArquivadoSistema(index){
+  const pacientes=get("pacientes");
+  const p=pacientes[index];
+  if(!p || !pacienteInativoSistema(p)){alert("Paciente arquivado não encontrado.");return;}
+  const nome=p.nome || "Paciente sem nome";
+  if(!confirm(`Reativar o cadastro de "${nome}"?\n\nA alteração será confirmada no banco online antes de aparecer nas listas ativas.`))return;
+  if(typeof sincronizarPacienteOnlineSistema !== "function"){
+    alert("Não foi possível reativar: sincronização online indisponível.");
+    return;
+  }
+  const reativado={...p,ativo:true,active:true,status:"ativo",reativadoEm:new Date().toISOString()};
+  const r=await sincronizarPacienteOnlineSistema(reativado);
+  if(!r || !r.ok){
+    const erro=(r && r.error && r.error.message) ? r.error.message : "não foi possível confirmar no Supabase";
+    alert("Não foi possível reativar no online. Nada foi alterado localmente.\n\n"+erro);
+    return;
+  }
+  pacientes[index]=reativado;
+  set("pacientes",pacientes);
+  try{ atualizarTudo(); }catch(e){}
+  try{ renderLocalizarPacienteRapido(); }catch(e){}
+  try{ renderPacientesLGPD(); }catch(e){}
+  try{ renderPacientesArquivadosSistema(); }catch(e){}
+  alert("Paciente reativado e confirmado no banco online.");
 }
 
 
@@ -8350,7 +8436,7 @@ function buscarPacienteModuloLGPD(id){
     return;
   }
 
-  const pacientes=get("pacientes").filter(p =>
+  const pacientes=get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||
@@ -8414,7 +8500,7 @@ function buscarPacienteMapaBotoxPro(){
   }
   const normalizar = valor => String(valor || "").toLowerCase().replace(/\s+/g," ").trim();
   const numeros = valor => String(valor || "").replace(/\D/g,"");
-  const lista = get("pacientes").filter(p =>
+  const lista = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     normalizar(p.nome).includes(termo) ||
     normalizar(p.cpf).includes(termo) ||
     normalizar(p.tel).includes(termo) ||
@@ -8600,8 +8686,72 @@ function aplicarPrivacidadeSelectsAposAtualizar(){
 
 let pacienteEditandoId = null;
 
+function campoBuscaEditarCadastroSistema(){
+  return document.getElementById("buscaEditarCadastro") || null;
+}
+
+function avisoCadastroPacienteSistema(texto){
+  const msg=String(texto || "");
+  const aviso=document.getElementById("avisoModoCadastro");
+  if(aviso) aviso.innerHTML=escapeHtmlText(msg);
+  alert(msg);
+}
+
+function numerosPacienteSistema(valor){
+  return String(valor || "").replace(/\D/g,"");
+}
+
+function emailPacienteSistema(valor){
+  return String(valor || "").trim().toLowerCase();
+}
+
+function mesmoPacienteCadastroSistema(a,b,idEdicao){
+  if(!b) return false;
+  const idB=String(b.id ?? "");
+  if(idEdicao !== null && idEdicao !== undefined && String(idEdicao) !== ""){
+    return idB === String(idEdicao);
+  }
+  const idA=String((a && a.id) ?? "");
+  return !!idA && !!idB && idA===idB;
+}
+
+function validarDuplicidadePacienteSistema(paciente,idEdicao,lista){
+  const cpf=numerosPacienteSistema(paciente.cpf);
+  const email=emailPacienteSistema(paciente.email);
+  const pacientes=Array.isArray(lista) ? lista : get("pacientes");
+  if(cpf && pacientes.some(x=>!mesmoPacienteCadastroSistema(paciente,x,idEdicao) && numerosPacienteSistema(x.cpf)===cpf)){
+    return "Já existe paciente cadastrado com este CPF nesta clínica.";
+  }
+  if(email && pacientes.some(x=>!mesmoPacienteCadastroSistema(paciente,x,idEdicao) && emailPacienteSistema(x.email)===email)){
+    return "Já existe paciente cadastrado com este e-mail nesta clínica.";
+  }
+  return "";
+}
+
+function registrarInativacaoPacienteOnlineSistema(paciente){
+  try{
+    if(typeof sincronizarPacienteOnlineSistema !== "function" || !paciente) return;
+    sincronizarPacienteOnlineSistema(paciente).then(r=>{
+      const msg=document.getElementById("onlineStatusSistema");
+      if(r && r.ok){
+        if(msg) msg.innerText="Paciente inativado no banco online: "+(paciente.nome || "cadastro");
+        return;
+      }
+      if(r && !r.ignorado){
+        if(msg) msg.innerText="Cadastro inativado localmente. Online pendente: "+((r.error && r.error.message) || "não foi possível inativar no Supabase");
+      }
+    }).catch(e=>{
+      console.warn("Inativação online do paciente não aplicada:",e);
+      const msg=document.getElementById("onlineStatusSistema");
+      if(msg) msg.innerText="Cadastro inativado localmente. Online pendente: "+(e.message || String(e));
+    });
+  }catch(e){
+    console.warn("Inativação online do paciente não iniciada:",e);
+  }
+}
+
 function buscarPacienteParaEditarCadastro(){
-  const campo = document.getElementById("buscaEditarCadastro");
+  const campo = campoBuscaEditarCadastroSistema();
   const area = document.getElementById("resultadoEditarCadastro");
   if(!campo || !area) return;
 
@@ -8611,7 +8761,7 @@ function buscarPacienteParaEditarCadastro(){
     return;
   }
 
-  const pacientes = get("pacientes").filter(p =>
+  const pacientes = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome || "").toLowerCase().includes(termo) ||
     (p.cpf || "").toLowerCase().includes(termo) ||
     (p.tel || "").toLowerCase().includes(termo) ||
@@ -8775,7 +8925,7 @@ function limparModoEdicaoCadastro(){
   pacienteEditandoId = null;
   const aviso = document.getElementById("avisoModoCadastro");
   if(aviso) aviso.innerHTML = "";
-  const busca = document.getElementById("buscaEditarCadastro");
+  const busca = campoBuscaEditarCadastroSistema();
   if(busca) busca.value = "";
   const resultado = document.getElementById("resultadoEditarCadastro");
   if(resultado) resultado.innerHTML = "";
@@ -9916,7 +10066,7 @@ function buscarPacienteRelatorioPro(){
   if(selecionado) selecionado.value = "";
   if(historico) historico.innerHTML = "";
   if(!termo){area.innerHTML="";return;}
-  const lista = get("pacientes").filter(p =>
+  const lista = get("pacientes").filter(pacienteAtivoSistema).filter(p =>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||
@@ -12671,7 +12821,7 @@ async function buscarPacienteProntuarioPro(){
   if(!campo||!area)return;
   const termo=(campo.value||"").toLowerCase().trim();
   if(!termo){area.innerHTML="";return;}
-  let pacientes=get("pacientes");
+  let pacientes=get("pacientes").filter(pacienteAtivoSistema);
   let lista=pacientes.filter(p=>(p.nome||"").toLowerCase().includes(termo)||(p.cpf||"").toLowerCase().includes(termo)||(p.tel||"").toLowerCase().includes(termo)||(p.whats||"").toLowerCase().includes(termo)).slice(0,8);
   const online=configOnlineSistema();
   if(!lista.length && termo.length>=2 && online.ativo && online.clinicId && !window.__buscaProntuarioBaixandoOnline){
@@ -12679,7 +12829,7 @@ async function buscarPacienteProntuarioPro(){
     area.innerHTML=`<button class="prontuario-busca-opcao" type="button">Buscando pacientes no online...</button>`;
     try{
       await baixarPacientesOnlineSistema();
-      pacientes=get("pacientes");
+      pacientes=get("pacientes").filter(pacienteAtivoSistema);
       lista=pacientes.filter(p=>(p.nome||"").toLowerCase().includes(termo)||(p.cpf||"").toLowerCase().includes(termo)||(p.tel||"").toLowerCase().includes(termo)||(p.whats||"").toLowerCase().includes(termo)).slice(0,8);
     }catch(e){
       console.warn("Busca online de pacientes falhou:",e);
@@ -13909,7 +14059,7 @@ function pacienteParaOnlineSistema(p){
     address:{cep:p.cep || "",rua:p.rua || "",numero:p.numero || "",complemento:p.complemento || "",bairro:p.bairro || "",cidade:p.cidade || "",uf:p.uf || ""},
     emergency_contact:{nome:p.emergNome || p.emergencia || "",parentesco:p.emergParentesco || "",telefone:p.emergTel || ""},
     notes:p.obs || "",
-    active:true
+    active:pacienteAtivoSistema(p)
   };
 }
 async function testarConexaoOnlineSistema(){
@@ -14887,7 +15037,9 @@ async function baixarPacientesOnlineSistema(){
         emergNome:emerg.nome || "",
         emergParentesco:emerg.parentesco || "",
         emergTel:emerg.telefone || "",
-        obs:x.notes || ""
+        obs:x.notes || "",
+        ativo:x.active !== false,
+        status:x.active === false ? "inativo" : ""
       };
       porNomeCpf.set(chave,convertido);
     });
@@ -16415,7 +16567,7 @@ function buscarPacienteAutorizacaoPro(){
   if(!campo || !area) return;
   const termo=(campo.value||"").toLowerCase().trim();
   if(!termo){area.innerHTML="";return;}
-  const lista=get("pacientes").filter(p=>
+  const lista=get("pacientes").filter(pacienteAtivoSistema).filter(p=>
     (p.nome||"").toLowerCase().includes(termo) ||
     (p.cpf||"").toLowerCase().includes(termo) ||
     (p.tel||"").toLowerCase().includes(termo) ||

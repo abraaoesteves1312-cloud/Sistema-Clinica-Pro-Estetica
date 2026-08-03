@@ -14874,6 +14874,44 @@ async function diagnosticarConexaoOnlineSistema(){
     linhas.push(`${ok ? "OK" : "FALHOU"} - ${texto}${detalhe ? " ("+detalhe+")" : ""}`);
     mostrarDiagnosticoOnlineSistema(linhas);
   };
+  const logErroDiagnostico=(origem,erro,extra={})=>{
+    const info={
+      origem,
+      name:erro?.name || "",
+      message:erro?.message || extra.message || "",
+      status:erro?.status || extra.status || "",
+      code:erro?.code || extra.code || "",
+      details:erro?.details || erro?.detail || extra.details || ""
+    };
+    console.warn("Diagnóstico conexão online Supabase:",info);
+    return info;
+  };
+  const textoRespostaDiagnostico=async(resposta)=>{
+    try{return (await resposta.clone().text()).slice(0,500);}
+    catch(e){return "";}
+  };
+  const classificarErroDiagnostico=(erro,extra={})=>{
+    const statusHttp=Number(extra.status || erro?.status || 0);
+    const msg=[
+      erro?.name,
+      erro?.message,
+      erro?.code,
+      erro?.details,
+      erro?.detail,
+      extra.message,
+      extra.details
+    ].filter(Boolean).join(" ");
+    if(/Invalid API key|invalid api key|apikey|api key/i.test(msg)) return "Configuração da conexão online inválida. Contate o suporte.";
+    if(statusHttp===401) return "HTTP 401: chave/sessão recusada pelo Supabase. Não é falha de rede.";
+    if(statusHttp===403) return "HTTP 403: permissão/RLS recusou a operação. Não é falha de rede.";
+    if(/row-level security|RLS|permission denied|policy/i.test(msg)) return "Permissão/RLS recusou a consulta.";
+    if(/relation .* does not exist|does not exist|not found|404/i.test(msg) || statusHttp===404) return "Tabela ou rota inexistente no Supabase.";
+    if(/JWT|session|not authenticated|auth session missing/i.test(msg)) return "Usuário não autenticado ou sessão online ausente.";
+    if(/timeout|timed out|demorou demais/i.test(msg)) return "Timeout: Supabase demorou demais para responder.";
+    if(/Failed to fetch|NetworkError|Load failed|ERR_NETWORK|fetch/i.test(msg) || !navigator.onLine) return "Falha real de rede/fetch: navegador não conseguiu alcançar o Supabase.";
+    if(statusHttp>=500) return "Supabase indisponível ou erro interno do servidor.";
+    return textoErroOnlineSistema(erro || msg || "erro desconhecido");
+  };
   try{
     salvarConfigOnlineRapidoSistema();
     const online=configOnlineSistema();
@@ -14900,13 +14938,33 @@ async function diagnosticarConexaoOnlineSistema(){
 
     let respostaServidor=null;
     try{
-      respostaServidor=await promessaComTempoSistema(fetch(`${online.supabaseUrl}/auth/v1/settings`,{
+      respostaServidor=await promessaComTempoSistema(fetch(`${online.supabaseUrl}/auth/v1/health`,{
         method:"GET",
-        headers:{apikey:online.supabaseAnonKey,Authorization:`Bearer ${online.supabaseAnonKey}`}
-      }),"Teste direto do servidor Supabase",12);
-      marcar(respostaServidor && respostaServidor.status<500,"Servidor Supabase respondeu",`status ${respostaServidor.status}`);
+        headers:{apikey:online.supabaseAnonKey}
+      }),"Teste direto de saúde do Supabase",12);
+      const corpoServidor=await textoRespostaDiagnostico(respostaServidor);
+      const detalheServidor=`status ${respostaServidor.status}`;
+      if(respostaServidor.status>=500){
+        logErroDiagnostico("Servidor Supabase respondeu com erro 5xx",null,{status:respostaServidor.status,details:corpoServidor});
+        marcar(false,"Servidor Supabase indisponível",detalheServidor);
+        if(status) status.innerText="Diagnóstico encontrou Supabase indisponível.";
+        return;
+      }
+      if(/Invalid API key|invalid api key|apikey|api key/i.test(corpoServidor)){
+        logErroDiagnostico("Chave Supabase inválida no teste de saúde",null,{status:respostaServidor.status,details:corpoServidor});
+        marcar(false,"Chave pública Supabase",classificarErroDiagnostico(null,{status:respostaServidor.status,details:corpoServidor}));
+        if(status) status.innerText="Diagnóstico encontrou configuração online inválida.";
+        return;
+      }
+      if(respostaServidor.status===401 || respostaServidor.status===403){
+        logErroDiagnostico("Servidor Supabase recusou teste de saúde",null,{status:respostaServidor.status,details:corpoServidor});
+        marcar(true,"Servidor Supabase respondeu",`${detalheServidor}; resposta HTTP recebida, não é falha de rede`);
+      }else{
+        marcar(true,"Servidor Supabase respondeu",detalheServidor);
+      }
     }catch(e){
-      marcar(false,"Servidor Supabase respondeu",textoErroOnlineSistema(e));
+      logErroDiagnostico("Falha real no fetch do Supabase antes do login",e);
+      marcar(false,"Conectividade Supabase",classificarErroDiagnostico(e));
       linhas.push("Orientação: teste outro navegador, desligue tradutor/extensões, ou teste outra internet. Esse erro acontece antes da senha.");
       mostrarDiagnosticoOnlineSistema(linhas);
       if(status) status.innerText="Diagnóstico encontrou falha de rede antes do login.";
@@ -14926,13 +14984,15 @@ async function diagnosticarConexaoOnlineSistema(){
     try{
       const login=await promessaComTempoSistema(db.auth.signInWithPassword({email,password:senha}),"Login no Supabase",15);
       if(login.error){
-        marcar(false,"Login online",login.error.message || "erro de autenticação");
+        logErroDiagnostico("Login online",login.error);
+        marcar(false,"Login online",classificarErroDiagnostico(login.error));
         if(status) status.innerText="Diagnóstico encontrou erro no login.";
         return;
       }
       marcar(true,"Login online","usuário autenticado");
     }catch(e){
-      marcar(false,"Login online",textoErroOnlineSistema(e));
+      logErroDiagnostico("Login online",e);
+      marcar(false,"Login online",classificarErroDiagnostico(e));
       if(status) status.innerText="Diagnóstico encontrou falha no login.";
       return;
     }
@@ -14940,13 +15000,15 @@ async function diagnosticarConexaoOnlineSistema(){
     try{
       const teste=await consultaOnlineComTempoSistema(db.from("patients").select("id").eq("clinic_id",online.clinicId).limit(1),"Consulta da tabela patients",15);
       if(teste.error){
-        marcar(false,"Tabela patients / permissão",teste.error.message || "consulta recusada");
+        logErroDiagnostico("Tabela patients / permissão",teste.error);
+        marcar(false,"Tabela patients / permissão",classificarErroDiagnostico(teste.error));
         if(status) status.innerText="Diagnóstico encontrou erro no banco.";
         return;
       }
       marcar(true,"Tabela patients / permissão",`${(teste.data || []).length} registro(s) de teste`);
     }catch(e){
-      marcar(false,"Tabela patients / permissão",textoErroOnlineSistema(e));
+      logErroDiagnostico("Tabela patients / permissão",e);
+      marcar(false,"Tabela patients / permissão",classificarErroDiagnostico(e));
       if(status) status.innerText="Diagnóstico encontrou falha ao consultar banco.";
       return;
     }

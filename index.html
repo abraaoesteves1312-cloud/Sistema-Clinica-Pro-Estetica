@@ -14964,11 +14964,10 @@ async function diagnosticarConexaoOnlineSistema(){
       }
     }catch(e){
       logErroDiagnostico("Falha real no fetch do Supabase antes do login",e);
-      marcar(false,"Conectividade Supabase",classificarErroDiagnostico(e));
-      linhas.push("Orientação: teste outro navegador, desligue tradutor/extensões, ou teste outra internet. Esse erro acontece antes da senha.");
+      linhas.push("AVISO - Teste direto do endpoint Supabase inconclusivo: "+classificarErroDiagnostico(e));
+      linhas.push("Continuando pelo cliente oficial Supabase para confirmar se é rede real ou bloqueio do teste direto.");
       mostrarDiagnosticoOnlineSistema(linhas);
-      if(status) status.innerText="Diagnóstico encontrou falha de rede antes do login.";
-      return;
+      if(status) status.innerText="Diagnóstico continua pelo cliente Supabase...";
     }
 
     const db=clienteSupabaseSistema();

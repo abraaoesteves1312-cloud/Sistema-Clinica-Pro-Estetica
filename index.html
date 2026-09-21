@@ -14913,10 +14913,13 @@ async function diagnosticarConexaoOnlineSistema(){
     return textoErroOnlineSistema(erro || msg || "erro desconhecido");
   };
   try{
+    const campoSenhaDiagnostico=document.getElementById("onlineSenhaSistema");
+    const senhaDigitadaDiagnostico=campoSenhaDiagnostico?.value || "";
     salvarConfigOnlineRapidoSistema();
+    if(campoSenhaDiagnostico) campoSenhaDiagnostico.value=senhaDigitadaDiagnostico;
     const online=configOnlineSistema();
     const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
-    const senha=document.getElementById("onlineSenhaSistema")?.value || "";
+    const senha=senhaDigitadaDiagnostico || document.getElementById("onlineSenhaSistema")?.value || "";
     if(document.getElementById("onlineSupabaseUrl")) document.getElementById("onlineSupabaseUrl").value=online.supabaseUrl || "";
     if(document.getElementById("onlineSupabaseAnonKey")) document.getElementById("onlineSupabaseAnonKey").value=online.supabaseAnonKey || "";
     if(status) status.innerText="Rodando diagnóstico online...";

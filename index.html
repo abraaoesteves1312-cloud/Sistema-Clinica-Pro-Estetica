@@ -5329,7 +5329,7 @@ function montarTelaConfig(){
           <button class="btn-main" type="button" onclick="carregarAdminGeralSistema(true)">Carregar clínicas</button>
           <button class="btn-light" type="button" onclick="limparEditorAdminGeralSistema()">Limpar seleção</button>
         </div>
-        <div id="adminGeralStatusSistema" class="msg">Execute a etapa SQL 9 e entre com um usuário superadmin para carregar este painel.</div>
+        <div id="adminGeralStatusSistema" class="msg">Clique em Carregar clínicas para consultar o painel geral online.</div>
         <div id="adminGeralCadastroClinicaSistema" class="admin-geral-editor">
           <h4>Cadastrar nova clínica</h4>
           <p>Crie uma clínica nova com acesso inicial, plano comercial e datas de assinatura.</p>
@@ -13672,9 +13672,9 @@ async function salvarConfigUsuariosSeguroSistema(){
   renderConfig();
 }
 window.salvarConfig = salvarConfigUsuariosSeguroSistema;
-const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtgduftzxaw.supabase.co";
-const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtgduftzxaw";
-const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="jyjqhuwmcmtgduftzxaw";
+const SUPABASE_URL_CORRETA_SISTEMA="https://yjyqhuwmcmtdgutfzxaw.supabase.co";
+const SUPABASE_PROJECT_REF_CORRETO_SISTEMA="yjyqhuwmcmtdgutfzxaw";
+const SUPABASE_PROJECT_REF_ANTIGO_ERRADO_SISTEMA="yjyqhuwmcmtgduftzxaw";
 const SUPABASE_ANON_KEY_COMERCIAL_SISTEMA="sb_publishable_tvHWPhWbj4dU51HFpE153g_xUC1o-jg";
 
 function chaveSupabaseComercialSistema(){
@@ -14386,17 +14386,27 @@ async function carregarPlanoClinicaOnlineSistema(mostrarAviso=false){
     const assinatura=assinaturaResp.data || {};
     const planoLigado=Array.isArray(assinatura.commercial_plans) ? assinatura.commercial_plans[0] : assinatura.commercial_plans;
     const regraPlano=avaliarAcessoPlanoComercialSistema(assinatura);
+    const acessoSuporte=usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema()) ||
+      usuarioSuporteSuperadminPainelSistema({email:sessao.user?.email,role:perfil.role});
+    const regraAplicada=acessoSuporte && regraPlano.bloqueado
+      ? {
+          ...regraPlano,
+          bloqueado:false,
+          alerta:true,
+          mensagem:regraPlano.mensagem+" A conta de suporte permanece liberada para administrar e regularizar as clínicas."
+        }
+      : regraPlano;
     atualizarPainelPlanoComercialSistema({
       clinica:nomeClinica,
       plano:planoLigado?.name || "Sem plano definido",
       ciclo:assinatura.billing_cycle,
       status:assinatura.status,
-      bloqueado:regraPlano.bloqueado,
-      alerta:regraPlano.alerta,
-      mensagem:regraPlano.mensagem
+      bloqueado:regraAplicada.bloqueado,
+      alerta:regraAplicada.alerta,
+      mensagem:regraAplicada.mensagem
     });
-    aplicarBloqueioPlanoComercialSistema(regraPlano,{clinica:nomeClinica,plano:planoLigado?.name});
-    return !regraPlano.bloqueado;
+    aplicarBloqueioPlanoComercialSistema(regraAplicada,{clinica:nomeClinica,plano:planoLigado?.name});
+    return !regraAplicada.bloqueado;
   }catch(e){
     console.warn("Consulta comercial online:",e);
     atualizarPainelPlanoComercialSistema({mensagem:"Não foi possível consultar o plano agora: "+textoErroOnlineSistema(e)});
@@ -14621,7 +14631,7 @@ function limparAdminGeralCadastroClinicaSistema(){
 async function criarAdminGeralClinicaSistema(){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralCadastroStatusSistema");
-  if(!usuarioSuperadminSistema(usuarioAtualSistema())){
+  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
     if(msg) msg.innerText="Somente o administrador geral pode criar clínicas.";
     return false;
   }
@@ -14718,7 +14728,7 @@ function renderAdminGeralClinicasSistema(lista=[]){
 async function carregarAdminGeralSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralStatusSistema");
-  if(!usuarioSuperadminSistema(usuarioAtualSistema())){
+  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
     if(msg) msg.innerText="Painel geral disponível apenas para o administrador geral do sistema.";
     return false;
   }
@@ -14774,6 +14784,10 @@ function selecionarAdminGeralClinicaSistema(idx){
 async function salvarAdminGeralPlanoSistema(){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralEditorStatusSistema");
+  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
+    if(msg) msg.innerText="Somente o administrador geral pode alterar planos.";
+    return false;
+  }
   if(!db){
     if(msg) msg.innerText="Conecte o Supabase antes de salvar.";
     return false;

@@ -14084,17 +14084,37 @@ async function testarConexaoOnlineSistema(){
 }
 async function entrarOnlineSistema(){
   const msg=document.getElementById("onlineStatusSistema");
-  const senhaDigitada=document.getElementById("onlineSenhaSistema")?.value || "";
+  const campoClinicId=document.getElementById("onlineClinicId");
+  const campoSenha=document.getElementById("onlineSenhaSistema");
+  const clinicIdDigitado=campoClinicId?.value || "";
+  const senhaDigitada=campoSenha?.value || "";
+  const restaurarCamposAcesso=()=>{
+    if(campoClinicId) campoClinicId.value=clinicIdDigitado;
+    if(campoSenha) campoSenha.value=senhaDigitada;
+  };
   salvarConfigOnlineRapidoSistema();
   await limparSessaoOnlineParaNovoLoginSistema();
+  restaurarCamposAcesso();
   const db=clienteSupabaseSistema();
   const email=(document.getElementById("onlineEmailSistema")?.value || "").trim().toLowerCase();
   const senha=senhaDigitada;
   if(!db){if(msg) msg.innerText="Preencha URL e chave pública do Supabase antes de entrar.";return;}
   if(!email || !senha){if(msg) msg.innerText="Informe e-mail e senha do acesso online.";return;}
   if(msg) msg.innerText="Entrando no acesso online...";
-  const {error}=await db.auth.signInWithPassword({email,password:senha});
-  if(error){if(msg) msg.innerText="Não entrou no online: "+error.message;return;}
+  let error=null;
+  try{
+    ({error}=await db.auth.signInWithPassword({email,password:senha}));
+  }catch(e){
+    restaurarCamposAcesso();
+    if(msg) msg.innerText="Não entrou no online: "+textoErroOnlineSistema(e);
+    return;
+  }
+  if(error){
+    restaurarCamposAcesso();
+    if(msg) msg.innerText="Não entrou no online: "+error.message;
+    return;
+  }
+  if(campoSenha) campoSenha.value="";
   if(msg) msg.innerText="Acesso online conectado. Identificando a clínica e o plano...";
   const liberado=await carregarPlanoClinicaOnlineSistema(false);
   if(msg) msg.innerText=liberado ? "Acesso online conectado. Agora você pode testar ou sincronizar os dados." : "Acesso online conectado, mas o plano precisa ser regularizado antes de usar o sistema.";

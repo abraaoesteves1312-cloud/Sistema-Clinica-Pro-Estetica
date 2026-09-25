@@ -3382,6 +3382,23 @@ function usuarioSuporteSuperadminPainelSistema(u){
   const email=String((u&&u.email) || (u&&u.login) || (u&&u.emailAcesso) || (u&&u.userEmail) || "").trim().toLowerCase();
   return usuarioSuperadminSistema(u) || perfil==="superadmin" || perfil==="suporte" || email==="abraaoesteves1312@gmail.com";
 }
+async function usuarioSuporteSuperadminSessaoOnlineSistema(db){
+  if(usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())) return true;
+  try{
+    const cliente=db || (typeof clienteSupabaseSistema==="function" ? clienteSupabaseSistema() : null);
+    if(!cliente?.auth) return false;
+    const sessaoResp=await cliente.auth.getSession();
+    const usuario=sessaoResp?.data?.session?.user;
+    return usuarioSuporteSuperadminPainelSistema({
+      email:usuario?.email,
+      role:usuario?.app_metadata?.role || usuario?.user_metadata?.role || ""
+    });
+  }catch(e){
+    console.warn("Verificação da sessão online do administrador geral:",e);
+    return false;
+  }
+}
+
 function acessosPerfilSistema(perfil){
   const p=perfilUsuarioSistema({perfil});
   if(p==="Administrador") return todosAcessosSistema();
@@ -14631,7 +14648,7 @@ function limparAdminGeralCadastroClinicaSistema(){
 async function criarAdminGeralClinicaSistema(){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralCadastroStatusSistema");
-  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
+  if(!await usuarioSuporteSuperadminSessaoOnlineSistema(db)){
     if(msg) msg.innerText="Somente o administrador geral pode criar clínicas.";
     return false;
   }
@@ -14728,7 +14745,7 @@ function renderAdminGeralClinicasSistema(lista=[]){
 async function carregarAdminGeralSistema(mostrarAviso=false){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralStatusSistema");
-  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
+  if(!await usuarioSuporteSuperadminSessaoOnlineSistema(db)){
     if(msg) msg.innerText="Painel geral disponível apenas para o administrador geral do sistema.";
     return false;
   }
@@ -14784,7 +14801,7 @@ function selecionarAdminGeralClinicaSistema(idx){
 async function salvarAdminGeralPlanoSistema(){
   const db=clienteSupabaseSistema();
   const msg=document.getElementById("adminGeralEditorStatusSistema");
-  if(!usuarioSuporteSuperadminPainelSistema(usuarioAtualSistema())){
+  if(!await usuarioSuporteSuperadminSessaoOnlineSistema(db)){
     if(msg) msg.innerText="Somente o administrador geral pode alterar planos.";
     return false;
   }

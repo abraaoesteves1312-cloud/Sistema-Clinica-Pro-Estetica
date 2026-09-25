@@ -3295,7 +3295,7 @@ function corrigirClinicaUsuarioSessaoSistema(usuario){
 }
 const escopoAdminGeralSistema="admin-geral";
 function chaveUsaEscopoClinicaSistema(k){
-  return ["pacientes","anamnese","evolucao","autorizacoes","fotos","agenda","estoque","entradasEstoque","baixasEstoque","financeiro","cobrancas"].includes(String(k || ""));
+  return ["pacientes","anamnese","evolucao","autorizacoes","fotos","agenda","estoque","entradasEstoque","baixasEstoque","financeiro","cobrancas","procedimentosProntuario","cobrancasProntuario","financeiroPacientes","pagamentosAtendimentos","financeiroPro","botox","mapasBotox","estoqueHistorico","exclusoesPendentesProntuario"].includes(String(k || ""));
 }
 function escopoDoRegistroSistema(item){
   if(!item || typeof item!=="object") return "";
@@ -3346,7 +3346,25 @@ function prepararRegistrosParaSalvarSistema(k,lista){
   if(!escopo || escopo===escopoAdminGeralSistema) return lista;
   return lista.map(item=>item && typeof item==="object" && !Array.isArray(item) ? {...item,clinicScope:item.clinicScope || escopo} : item);
 }
-const get=k=>filtrarRegistrosPorEscopoSistema(k,JSON.parse(localStorage.getItem(chaveLocalSistema(k))||"[]")); const set=(k,v)=>localStorage.setItem(chaveLocalSistema(k),JSON.stringify(prepararRegistrosParaSalvarSistema(k,v)));
+function migrarChaveClinicaLegadaSistema(k){
+  if(!chaveUsaEscopoClinicaSistema(k)) return;
+  const escopo=escopoClinicaAtualSistema();
+  if(!escopo || escopo===escopoAdminGeralSistema) return;
+  const chaveEscopada=chaveLocalSistema(k);
+  if(localStorage.getItem(chaveEscopada)!==null) return;
+  const chaveLegada=`gepV2_${k}`;
+  const bruto=localStorage.getItem(chaveLegada);
+  if(bruto===null) return;
+  try{
+    const lista=JSON.parse(bruto);
+    if(!Array.isArray(lista)) return;
+    const migrada=lista.map(item=>item && typeof item==="object" && !Array.isArray(item) ? {...item,clinicScope:item.clinicScope || escopo} : item);
+    localStorage.setItem(chaveEscopada,JSON.stringify(migrada));
+  }catch(e){
+    console.warn("Não foi possível migrar dados locais do prontuário para a clínica atual:",k,e);
+  }
+}
+const get=k=>{migrarChaveClinicaLegadaSistema(k);return filtrarRegistrosPorEscopoSistema(k,JSON.parse(localStorage.getItem(chaveLocalSistema(k))||"[]"));}; const set=(k,v)=>localStorage.setItem(chaveLocalSistema(k),JSON.stringify(prepararRegistrosParaSalvarSistema(k,v)));
 const areasSistemaAcesso=[
   {id:"dashboard",nome:"Dashboard"},
   {id:"pacientes",nome:"Pacientes"},
@@ -3954,7 +3972,7 @@ function coletarAvaliacaoCorporal(){
   };
 }
 
-function salvarAnamnese(atualizarRegistroFluxo){let checks=[...document.querySelectorAll("#anamnese input[type='checkbox']:checked")].map(c=>c.value);let a=get("anamnese");const assinatura=obterAssinaturaAnamnese();const paciente=anaPaciente.value;if(!paciente || paciente==="Nenhum paciente"){alert("Selecione o paciente da anamnese antes de salvar.");return false;}const procedimentosMultiplos=document.getElementById("histProcedimentosMultiplos")?.value||"";const pesoAtual=document.getElementById("medPeso")?.value||"";const alturaAtual=document.getElementById("medAltura")?.value||"";const registro={id:Date.now(),paciente,data:anaData.value,queixa:anaQueixa.value,historicoEstetico:{fez:histFezProcedimento.value,procedimento:histProcedimento.value,procedimentos:procedimentosMultiplos,data:histData.value,local:histLocal.value,profissional:histProfissional.value,teveIntercorrencia:histTeveIntercorrencia.value,intercorrencia:histIntercorrencia.value},objetivo:anaObjetivo.value,fototipo:anaFototipo.value,tipoPele:anaTipoPele.value,checks,historicoSaude:coletarHistoricoSaude(),avaliacaoCorporal:coletarAvaliacaoCorporal(),melasma:anaMelasma.value,acne:anaAcne.value,flacidez:anaFlacidez.value,celulite:anaCelulite.value,peso:pesoAtual,altura:alturaAtual,med:anaMedicamentos.value,hab:anaHabitos.value,obs:anaObs.value,declaracaoVeracidade:true,declaracaoTexto:"Declaro que todas as informações fornecidas nesta anamnese são verdadeiras e completas.",assinatura};const anteriorRegistroFluxo=(atualizarRegistroFluxo && ultimaAnamneseFluxo.id && ultimaAnamneseFluxo.paciente===paciente)?a.find(x=>Number(x.id)===Number(ultimaAnamneseFluxo.id)):null;if(anteriorRegistroFluxo && !registro.assinatura)registro.assinatura=anteriorRegistroFluxo.assinatura||"";if(atualizarRegistroFluxo && ultimaAnamneseFluxo.id && ultimaAnamneseFluxo.paciente===paciente){registro.id=ultimaAnamneseFluxo.id;a=a.map(x=>Number(x.id)===Number(registro.id)?registro:x);}else{a.push(registro);ultimaAnamneseFluxo={paciente,id:registro.id};}set("anamnese",a);salvarFotosAnamneseNoProntuario(paciente,anaData.value);limparAssinaturaAnamnese();atualizarTudo();try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}if(anaPaciente){if(![...anaPaciente.options].some(o=>o.value===paciente))anaPaciente.add(new Option(paciente,paciente));anaPaciente.value=paciente;}return registro;}
+function salvarAnamnese(atualizarRegistroFluxo){let checks=[...document.querySelectorAll("#anamnese input[type='checkbox']:checked")].map(c=>c.value);let a=get("anamnese");const assinatura=obterAssinaturaAnamnese();const paciente=anaPaciente.value;if(!paciente || paciente==="Nenhum paciente"){alert("Selecione o paciente da anamnese antes de salvar.");return false;}if(!anaData.value){alert("Informe a data da anamnese.");return false;}if(!(anaQueixa.value || "").trim() && !(anaObjetivo.value || "").trim()){alert("Informe a queixa principal ou o objetivo do tratamento.");return false;}const procedimentosMultiplos=document.getElementById("histProcedimentosMultiplos")?.value||"";const pesoAtual=document.getElementById("medPeso")?.value||"";const alturaAtual=document.getElementById("medAltura")?.value||"";const registro={id:Date.now(),paciente,pacienteId:pacienteIdProntuarioSistema(paciente),pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),data:anaData.value,queixa:anaQueixa.value,historicoEstetico:{fez:histFezProcedimento.value,procedimento:histProcedimento.value,procedimentos:procedimentosMultiplos,data:histData.value,local:histLocal.value,profissional:histProfissional.value,teveIntercorrencia:histTeveIntercorrencia.value,intercorrencia:histIntercorrencia.value},objetivo:anaObjetivo.value,fototipo:anaFototipo.value,tipoPele:anaTipoPele.value,checks,historicoSaude:coletarHistoricoSaude(),avaliacaoCorporal:coletarAvaliacaoCorporal(),melasma:anaMelasma.value,acne:anaAcne.value,flacidez:anaFlacidez.value,celulite:anaCelulite.value,peso:pesoAtual,altura:alturaAtual,med:anaMedicamentos.value,hab:anaHabitos.value,obs:anaObs.value,declaracaoVeracidade:true,declaracaoTexto:"Declaro que todas as informações fornecidas nesta anamnese são verdadeiras e completas.",assinatura};const anteriorRegistroFluxo=(atualizarRegistroFluxo && ultimaAnamneseFluxo.id && ultimaAnamneseFluxo.paciente===paciente)?a.find(x=>String(x.id)===String(ultimaAnamneseFluxo.id)):null;if(anteriorRegistroFluxo && !registro.assinatura)registro.assinatura=anteriorRegistroFluxo.assinatura||"";if(atualizarRegistroFluxo && ultimaAnamneseFluxo.id && ultimaAnamneseFluxo.paciente===paciente){registro.id=ultimaAnamneseFluxo.id;a=a.map(x=>String(x.id)===String(registro.id)?registro:x);}else{a.push(registro);ultimaAnamneseFluxo={paciente,id:registro.id};}set("anamnese",a);salvarFotosAnamneseNoProntuario(paciente,anaData.value);limparAssinaturaAnamnese();atualizarTudo();try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}if(anaPaciente){if(![...anaPaciente.options].some(o=>o.value===paciente))anaPaciente.add(new Option(paciente,paciente));anaPaciente.value=paciente;}return registro;}
 function salvarAgenda(){
   const paciente=agePaciente.value;
   if(!paciente || paciente==="Nenhum paciente" || paciente==="Pesquisar/selecionar paciente"){
@@ -3989,7 +4007,7 @@ function salvarAgenda(){
   try{sincronizarModuloAposSalvarSistema("agenda");}catch(e){}
   setTimeout(limparPacienteAgendaAoAbrir,80);
 }
-function salvarEvolucao(){let a=get("evolucao");a.push({id:Date.now(),paciente:evoPaciente.value,proc:evoProc.value,data:evoData.value,produto:evoProduto.value,lote:evoLote.value,qtd:evoQtd.value,regiao:evoRegiao.value,dor:evoDor.value,reacao:evoReacao.value,texto:evoTexto.value});set("evolucao",a);evoTexto.value="";atualizarTudo();try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}}
+function salvarEvolucao(){let a=get("evolucao");a.push({id:Date.now(),paciente:evoPaciente.value,pacienteId:pacienteIdProntuarioSistema(evoPaciente.value),pacienteOnlineId:pacienteOnlineIdProntuarioSistema(evoPaciente.value),proc:evoProc.value,data:evoData.value,produto:evoProduto.value,lote:evoLote.value,qtd:evoQtd.value,regiao:evoRegiao.value,dor:evoDor.value,reacao:evoReacao.value,texto:evoTexto.value});set("evolucao",a);evoTexto.value="";atualizarTudo();try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}}
 function getPacienteSelecionado(nome){
   return get("pacientes").find(p=>p.nome===nome) || {};
 }
@@ -4030,10 +4048,24 @@ ${cidade}, ${data}
 function salvarAutorizacao(){
   const assinatura = obterAssinaturaDigital();
   const pacienteAutorizado=autPaciente.value;
+  if(!pacienteAutorizado || pacienteAutorizado==="Nenhum paciente" || pacienteAutorizado==="Pesquisar/selecionar paciente"){
+    alert("Selecione o paciente antes de salvar a autorização.");
+    return false;
+  }
+  if(!(autProc.value || "").trim()){
+    alert("Informe o procedimento da autorização.");
+    return false;
+  }
+  if(!autData.value){
+    alert("Informe a data da autorização.");
+    return false;
+  }
   let a=get("autorizacoes");
   a.push({
     id:Date.now(),
     paciente:autPaciente.value,
+    pacienteId:pacienteIdProntuarioSistema(autPaciente.value),
+    pacienteOnlineId:pacienteOnlineIdProntuarioSistema(autPaciente.value),
     proc:autProc.value,
     data:autData.value,
     texto:autTextoEditavel.value,
@@ -4050,6 +4082,7 @@ function salvarAutorizacao(){
   atualizarTudo();
   try{sincronizarModuloAposSalvarSistema("prontuario");}catch(e){}
   setTimeout(()=>voltarAoProntuarioAposAutorizacao(pacienteAutorizado),120);
+  return true;
 }
 function imprimirTermo(){
   const texto = (typeof autTextoEditavel !== "undefined" ? autTextoEditavel.value : "");
@@ -5810,7 +5843,42 @@ function importarBackupSistema(input){
   };
   leitor.readAsText(arquivo,"UTF-8");
 }
-function rem(k,id){set(k,get(k).filter(x=>x.id!==id));atualizarTudo()}
+function tabelaOnlineRegistroClinicoSistema(k){
+  return {anamnese:"anamneses",evolucao:"evolutions",autorizacoes:"authorizations"}[String(k || "")] || "";
+}
+function registrarExclusaoPendenteProntuarioSistema(tabela,localId){
+  if(!tabela || localId===undefined || localId===null) return;
+  const fila=get("exclusoesPendentesProntuario");
+  if(!fila.some(x=>x.tabela===tabela && String(x.localId)===String(localId))){
+    fila.push({id:Date.now()+Math.random(),tabela,localId:String(localId),criadoEm:new Date().toISOString()});
+    set("exclusoesPendentesProntuario",fila);
+  }
+}
+async function processarExclusoesPendentesProntuarioSistema(){
+  const fila=get("exclusoesPendentesProntuario");
+  if(!fila.length) return {ok:true,total:0};
+  const restantes=[];
+  let removidas=0;
+  for(const item of fila){
+    const resultado=await excluirOnlinePorLocalIdSistema(item.tabela,item.localId);
+    if(resultado && resultado.ok) removidas++;
+    else restantes.push(item);
+  }
+  set("exclusoesPendentesProntuario",restantes);
+  return {ok:restantes.length===0,total:removidas,pendentes:restantes.length};
+}
+async function rem(k,id){
+  const tabela=tabelaOnlineRegistroClinicoSistema(k);
+  if(!tabela){set(k,get(k).filter(x=>String(x.id)!==String(id)));atualizarTudo();return;}
+  const rotulo=k==="anamnese" ? "esta anamnese" : (k==="evolucao" ? "esta evolução" : "esta autorização");
+  if(!confirm(`Remover ${rotulo}?\n\nA remoção será aplicada também ao banco online. Esta ação não pode ser desfeita.`)) return;
+  let resultado={ok:false,pendente:true};
+  try{resultado=await excluirOnlinePorLocalIdSistema(tabela,id);}catch(e){resultado={ok:false,error:e,pendente:true};}
+  if(!resultado || !resultado.ok) registrarExclusaoPendenteProntuarioSistema(tabela,id);
+  set(k,get(k).filter(x=>String(x.id)!==String(id)));
+  atualizarTudo();
+  if(!resultado || !resultado.ok) alert("Registro removido deste computador. A exclusão online ficou pendente e será tentada na próxima sincronização do prontuário.");
+}
 function renderProntuario(){let nome=prontPaciente.value,p=get("pacientes").find(x=>x.nome===nome)||{};let an=get("anamnese").filter(x=>x.paciente===nome),ev=get("evolucao").filter(x=>x.paciente===nome),au=get("autorizacoes").filter(x=>x.paciente===nome),fo=get("fotos").filter(x=>x.paciente===nome);areaProntuario.innerHTML=`<h3>Dados do paciente</h3><b>${p.nome||""}</b><br>CPF: ${p.cpf||"-"} | WhatsApp: ${p.whats||p.tel||"-"}<br>Endereço: ${(p.rua||"-")+", "+(p.numero||"s/n")+" - "+(p.bairro||"")+" - "+(p.cidade||"")+"/"+(p.uf||"")}<h3>Anamneses</h3>${an.map(x=>`• ${x.data} - ${x.queixa} / ${x.objetivo}<br>`).join("")||"Nenhuma"}<h3>Evoluções</h3>${ev.map(x=>`• ${x.data} - ${x.proc} - ${x.texto}<br>`).join("")||"Nenhuma"}<h3>Autorizações</h3>${au.map(x=>`• ${x.data} - ${x.proc}<br>`).join("")||"Nenhuma"}<h3>Fotos</h3>${fo.map(x=>`• ${x.data} - ${x.tipo} - ${x.arquivo}<br>`).join("")||"Nenhuma"}`;}
 
 function resumoSaude(x){
@@ -5956,6 +6024,8 @@ function lerArquivoFotoProntuario(input, tipo, paciente, data, obs){
     resolve({
       id: Date.now() + Math.floor(Math.random()*1000),
       paciente,
+      pacienteId:pacienteIdProntuarioSistema(paciente),
+      pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),
       data,
       tipo,
       nomeArquivo: arquivo.name,
@@ -6018,6 +6088,8 @@ async function salvarFotosProntuarioPacienteAtual(){
     return {
       id: Date.now() + Math.floor(Math.random()*100000),
       paciente,
+      pacienteId:pacienteIdProntuarioSistema(paciente),
+      pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),
       data,
       tipo,
       nomeArquivo: arquivo.name,
@@ -8061,12 +8133,13 @@ function renderProntuarioCompletoSeguro(){
   }
 
   const p = get("pacientes").find(x=>x.nome===nome) || {};
-  const fotos = get("fotos").filter(x=>x.paciente===nome);
-  const anamnese = get("anamnese").filter(x=>x.paciente===nome);
-  const agenda = get("agenda").filter(x=>x.paciente===nome);
-  const evolucao = get("evolucao").filter(x=>x.paciente===nome);
-  const autorizacoes = get("autorizacoes").filter(x=>x.paciente===nome);
-  const financeiro = get("financeiro").filter(x=>x.paciente===nome);
+  const pertence=x=>registroDoPacienteProntuarioSistema(x,p);
+  const fotos = get("fotos").filter(pertence);
+  const anamnese = get("anamnese").filter(pertence);
+  const agenda = get("agenda").filter(pertence);
+  const evolucao = get("evolucao").filter(pertence);
+  const autorizacoes = get("autorizacoes").filter(pertence);
+  const financeiro = get("financeiro").filter(pertence);
 
   const antes = fotos.filter(f=>(f.tipo||"").toLowerCase().includes("antes")).length;
   const depois = fotos.filter(f=>(f.tipo||"").toLowerCase().includes("depois")).length;
@@ -10149,15 +10222,16 @@ function gerarRelatorioPacienteSelecionado(){
     return;
   }
   const p = get("pacientes").find(x=>x.nome===nome) || {};
-  const anamneses = get("anamnese").filter(x=>x.paciente===nome).slice().reverse();
-  const evolucoes = get("evolucao").filter(x=>x.paciente===nome).slice().reverse();
-  const autorizacoes = get("autorizacoes").filter(x=>x.paciente===nome).slice().reverse();
-  const procedimentos = get("procedimentosProntuario").filter(x=>x.paciente===nome).slice().reverse();
-  const fotos = get("fotos").filter(x=>x.paciente===nome).slice().reverse();
-  const cobrancas = get("cobrancasProntuario").filter(x=>x.paciente===nome).slice().reverse();
-  const agenda = get("agenda").filter(x=>x.paciente===nome).slice().reverse();
-  const mapasBotox = get("mapasBotox").filter(x=>x.paciente===nome).slice().reverse();
-  const financeiro = get("financeiroPro").filter(x=>x.paciente===nome || x.pagador===nome).slice().reverse();
+  const pertence=x=>registroDoPacienteProntuarioSistema(x,p);
+  const anamneses = get("anamnese").filter(pertence).slice().reverse();
+  const evolucoes = get("evolucao").filter(pertence).slice().reverse();
+  const autorizacoes = get("autorizacoes").filter(pertence).slice().reverse();
+  const procedimentos = get("procedimentosProntuario").filter(pertence).slice().reverse();
+  const fotos = get("fotos").filter(pertence).slice().reverse();
+  const cobrancas = get("cobrancasProntuario").filter(pertence).slice().reverse();
+  const agenda = get("agenda").filter(pertence).slice().reverse();
+  const mapasBotox = get("botox").filter(pertence).slice().reverse();
+  const financeiro = get("financeiroPro").filter(x=>pertence(x) || (!x.pacienteId && x.pagador===nome)).slice().reverse();
   const resumoCobrancas = resumoCobrancasFinanceiroSistema(cobrancas);
   const totalCobrado = resumoCobrancas.total;
   const totalPago = resumoCobrancas.pago;
@@ -10973,6 +11047,29 @@ function pacienteProntuarioSelecionado(){
   const el = document.getElementById("prontPaciente");
   return el && el.value && el.value !== "Nenhum paciente" ? el.value : "";
 }
+function pacienteProntuarioAtualSistema(nome){
+  const alvo=String(nome || pacienteProntuarioSelecionado() || "").trim();
+  if(!alvo) return null;
+  return get("pacientes").find(p=>String(p.nome || "").trim()===alvo) || null;
+}
+function pacienteIdProntuarioSistema(nome){
+  const paciente=pacienteProntuarioAtualSistema(nome);
+  return paciente && paciente.id!==undefined && paciente.id!==null ? String(paciente.id) : "";
+}
+function pacienteOnlineIdProntuarioSistema(nome){
+  const paciente=pacienteProntuarioAtualSistema(nome);
+  return paciente && paciente.onlineId ? String(paciente.onlineId) : "";
+}
+function registroDoPacienteProntuarioSistema(registro,paciente){
+  if(!registro || !paciente) return false;
+  const idPaciente=String(paciente.id ?? "");
+  const idRegistro=String(registro.pacienteId ?? "");
+  if(idPaciente && idRegistro) return idPaciente===idRegistro;
+  const onlinePaciente=String(paciente.onlineId ?? "");
+  const onlineRegistro=String(registro.pacienteOnlineId ?? "");
+  if(onlinePaciente && onlineRegistro) return onlinePaciente===onlineRegistro;
+  return String(registro.paciente || "").trim()===String(paciente.nome || "").trim();
+}
 function salvarCobrancaProntuario(){
   const paciente = pacienteProntuarioSelecionado();
   if(!paciente){
@@ -11002,6 +11099,8 @@ function salvarCobrancaProntuario(){
   const item = {
     id: Date.now(),
     paciente,
+    pacienteId:pacienteIdProntuarioSistema(paciente),
+    pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),
     data: hojeCob(),
     dataBR: new Date().toLocaleDateString("pt-BR"),
     procedimento,
@@ -11028,6 +11127,8 @@ function salvarCobrancaProntuario(){
       data: item.data,
       tipo: "entrada",
       paciente,
+      pacienteId:item.pacienteId,
+      pacienteOnlineId:item.pacienteOnlineId,
       pagador: paciente,
       descricao: procedimento + " - " + paciente,
       categoria: "Procedimento / Prontuário",
@@ -11073,7 +11174,7 @@ function renderCobrancasProntuario(){
   if(!tabela) return;
 
   let lista = get("cobrancasProntuario");
-  if(paciente) lista = lista.filter(x => x.paciente === paciente);
+  if(paciente){const cadastro=pacienteProntuarioAtualSistema(paciente);lista=lista.filter(x=>registroDoPacienteProntuarioSistema(x,cadastro));}
   else lista = [];
 
   const resumoCobrancas = resumoCobrancasFinanceiroSistema(lista);
@@ -12558,7 +12659,7 @@ function salvarEvolucaoProntuario(){
   const materiais = coletarMateriaisEvolucaoProntuario();
   const baixa = baixarMateriaisEvolucaoProntuario(materiais,paciente,proc,data);
   if(!baixa.ok){alert(baixa.msg);return;}
-  const dados = {id:Date.now(),paciente,data,proc,profissional,queixaDia,conduta,orientacoes,intercorrencias,dor,materiais};
+  const dados = {id:Date.now(),paciente,pacienteId:pacienteIdProntuarioSistema(paciente),pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),data,proc,profissional,queixaDia,conduta,orientacoes,intercorrencias,dor,materiais};
   dados.texto = textoEvolucaoProntuario(dados);
   const lista = get("evolucao");
   lista.push(dados);
@@ -12795,7 +12896,7 @@ function salvarNovoProcedimentoProntuario(){
   if(!paciente){alert("Selecione o paciente antes de iniciar um procedimento.");return;}
   if(!procedimento){alert("Escolha ou digite o procedimento.");return;}
   const lista=get("procedimentosProntuario");
-  lista.push({id:Date.now(),paciente,procedimento,data:data?.value||hojeProntuarioPro()});
+  lista.push({id:Date.now(),paciente,pacienteId:pacienteIdProntuarioSistema(paciente),pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),procedimento,data:data?.value||hojeProntuarioPro()});
   set("procedimentosProntuario",lista);
   renderProntuarioProfissional();
   abrirAutorizacaoProcedimentoProntuario(encodeURIComponent(procedimento));
@@ -12881,7 +12982,7 @@ function renderConteudoAbaProntuario(ctx){
   if(prontuarioAbaAtual === "avaliacao") prontuarioAbaAtual = "anamnese";
   const ultimaAnamnese = anamneses.length ? anamneses[anamneses.length-1] : null;
   const avaliacao = ultimaAnamnese && ultimaAnamnese.avaliacaoCorporal ? ultimaAnamnese.avaliacaoCorporal : {};
-  const cobrancas = get("cobrancasProntuario").filter(x=>x.paciente===nome);
+  const cobrancas = get("cobrancasProntuario").filter(x=>registroDoPacienteProntuarioSistema(x,p));
   const totalCobrado = cobrancas.reduce((s,x)=>s + Number(x.valorTotal || x.valor || 0),0);
   const totalPago = cobrancas.reduce((s,x)=>s + Number(x.valorPago || x.pago || 0),0);
   const saldo = totalCobrado - totalPago;
@@ -13093,13 +13194,14 @@ function renderProntuarioProfissional(){
     return;
   }
   const p = get("pacientes").find(x=>x.nome===nome) || {};
-  const anamneses = get("anamnese").filter(x=>x.paciente===nome);
-  const evolucoes = get("evolucao").filter(x=>x.paciente===nome);
-  const autorizacoes = get("autorizacoes").filter(x=>x.paciente===nome);
-  const procedimentosPaciente = get("procedimentosProntuario").filter(x=>x.paciente===nome);
-  const fotos = get("fotos").filter(x=>x.paciente===nome);
-  const agenda = get("agenda").filter(x=>x.paciente===nome);
-  const mapasBotox = get("botox").filter(x=>x.paciente===nome);
+  const pertence=x=>registroDoPacienteProntuarioSistema(x,p);
+  const anamneses = get("anamnese").filter(pertence);
+  const evolucoes = get("evolucao").filter(pertence);
+  const autorizacoes = get("autorizacoes").filter(pertence);
+  const procedimentosPaciente = get("procedimentosProntuario").filter(pertence);
+  const fotos = get("fotos").filter(pertence);
+  const agenda = get("agenda").filter(pertence);
+  const mapasBotox = get("botox").filter(pertence);
   const antes = fotos.filter(x=>(x.tipo||"").toLowerCase().includes("antes")).length;
   const depois = fotos.filter(x=>(x.tipo||"").toLowerCase().includes("depois")).length;
   const endereco = [p.rua,p.numero,p.complemento,p.bairro,p.cidade,p.uf||p.estado].filter(Boolean).join(", ");
@@ -13166,6 +13268,7 @@ function editarProntuarioProfissional(){
   const p = pacienteAtualInline();
   if(!area || !p){alert("Selecione o paciente antes de editar.");return;}
   window.__prontuarioNomeEditando = p.nome;
+  window.__prontuarioIdEditando = p.id;
   area.innerHTML = `<section class="prontuario-edit-card">
    <div class="prontuario-edit-topo"><div><span class="prontuario-kicker">Modo de edição</span><h3>Atualizar cadastro do paciente</h3></div><button class="btn-light" onclick="renderProntuarioProfissional()">Cancelar</button></div>
    <div class="prontuario-edit-grid">
@@ -13196,25 +13299,62 @@ function editarProntuarioProfissional(){
   if(cpf)cpf.addEventListener("input",()=>cpf.value=mascaraCpfProntuario(cpf.value));
   if(rg)rg.addEventListener("input",()=>rg.value=mascaraRgProntuario(rg.value));
 }
-function salvarProntuarioProfissional(){
-  const nomeAntigo = window.__prontuarioNomeEditando;
-  const v = id => document.getElementById(id)?.value || "";
-  const nomeNovo = v("proNome").trim() || nomeAntigo;
-  if(!nomeAntigo || !nomeNovo){alert("Informe o nome do paciente.");return;}
-  const pacientes = get("pacientes").map(p=>p.nome!==nomeAntigo?p:{...p,nome:nomeNovo,cpf:v("proCpf"),rg:v("proRg"),nasc:v("proNasc"),nascimento:v("proNasc"),dataNascimento:v("proNasc"),tel:v("proTel"),telefone:v("proTel"),whats:v("proWhats"),whatsapp:v("proWhats"),email:v("proEmail"),profissao:v("proProfissao"),cep:v("proCep"),rua:v("proRua"),endereco:v("proRua"),numero:v("proNumero"),complemento:v("proComplemento"),bairro:v("proBairro"),cidade:v("proCidade"),uf:v("proUf"),estado:v("proUf"),emergNome:v("proEmergNome"),emergencia:v("proEmergNome"),emergParentesco:v("proEmergParentesco"),emergTel:v("proEmergTel"),obs:v("proObs"),observacoes:v("proObs")});
+async function salvarProntuarioProfissional(){
+  const nomeAntigo=window.__prontuarioNomeEditando;
+  const idEditando=window.__prontuarioIdEditando;
+  const v=id=>(document.getElementById(id)?.value || "").trim();
+  const nomeNovo=v("proNome");
+  if(!nomeAntigo || !nomeNovo){alert("Informe o nome do paciente.");return false;}
+  if(!numerosPacienteSistema(v("proTel")) && !numerosPacienteSistema(v("proWhats"))){
+    alert("Informe pelo menos um telefone ou WhatsApp do paciente.");
+    return false;
+  }
+  const pacientes=get("pacientes");
+  const indice=pacientes.findIndex(p=>idEditando!==undefined && idEditando!==null && String(p.id ?? "")===String(idEditando));
+  const indiceSeguro=indice>=0 ? indice : pacientes.findIndex(p=>p.nome===nomeAntigo);
+  if(indiceSeguro<0){alert("Paciente não encontrado para edição.");return false;}
+  const original=pacientes[indiceSeguro];
+  const atualizado={...original,nome:nomeNovo,cpf:v("proCpf"),rg:v("proRg"),nasc:v("proNasc"),nascimento:v("proNasc"),dataNascimento:v("proNasc"),tel:v("proTel"),telefone:v("proTel"),whats:v("proWhats"),whatsapp:v("proWhats"),email:v("proEmail"),profissao:v("proProfissao"),cep:v("proCep"),rua:v("proRua"),endereco:v("proRua"),numero:v("proNumero"),complemento:v("proComplemento"),bairro:v("proBairro"),cidade:v("proCidade"),uf:v("proUf"),estado:v("proUf"),emergNome:v("proEmergNome"),emergencia:v("proEmergNome"),emergParentesco:v("proEmergParentesco"),emergTel:v("proEmergTel"),obs:v("proObs"),observacoes:v("proObs")};
+  const duplicidade=validarDuplicidadePacienteSistema(atualizado,original.id,pacientes);
+  if(duplicidade){alert(duplicidade);return false;}
+  pacientes[indiceSeguro]=atualizado;
   set("pacientes",pacientes);
   ["anamnese","agenda","evolucao","autorizacoes","fotos","financeiro","botox","procedimentosProntuario","cobrancasProntuario","financeiroPacientes","pagamentosAtendimentos"].forEach(chave=>{
     const lista=get(chave);let mudou=false;
-    lista.forEach(item=>{if(item.paciente===nomeAntigo){item.paciente=nomeNovo;mudou=true;}});
+    lista.forEach(item=>{
+      const mesmoId=String(item.pacienteId ?? "") && String(item.pacienteId)===String(original.id ?? "");
+      if(mesmoId || (!item.pacienteId && item.paciente===nomeAntigo)){
+        item.paciente=nomeNovo;
+        item.pacienteId=String(original.id ?? "");
+        if(atualizado.onlineId) item.pacienteOnlineId=String(atualizado.onlineId);
+        mudou=true;
+      }
+    });
     if(mudou)set(chave,lista);
   });
   const seletor=document.getElementById("prontPaciente");
   try{atualizarSelects();}catch(e){}
-  if(seletor)seletor.value=nomeNovo;
+  if(seletor){seletor.innerHTML=`<option value="${escapeHtmlAttr(nomeNovo)}">${escapeHtmlText(nomeNovo)}</option>`;seletor.value=nomeNovo;}
   window.__prontuarioNomeEditando=nomeNovo;
+  window.__prontuarioIdEditando=original.id;
+  let mensagem="Cadastro atualizado neste computador.";
+  try{
+    const resultado=await sincronizarPacienteOnlineSistema(atualizado);
+    if(resultado && resultado.ok){
+      atualizado.onlineId=String(resultado.id || atualizado.onlineId || "");
+      pacientes[indiceSeguro]=atualizado;
+      set("pacientes",pacientes);
+      mensagem="Cadastro atualizado e confirmado no banco online.";
+    }else if(resultado && !resultado.ignorado){
+      mensagem="Cadastro atualizado neste computador. Sincronização online pendente: "+((resultado.error && resultado.error.message) || "não foi possível confirmar no Supabase");
+    }
+  }catch(e){
+    mensagem="Cadastro atualizado neste computador. Sincronização online pendente: "+(e.message || String(e));
+  }
   renderProntuarioProfissional();
   try{renderCobrancasProntuario();}catch(e){}
-  alert("Cadastro atualizado com sucesso.");
+  alert(mensagem);
+  return atualizado;
 }
 /* Revisao profissional: acesso, fluxo central e preparacao online */
 const GEP_REVISAO_PRO_20260605 = true;
@@ -15083,8 +15223,10 @@ async function sincronizarPacienteOnlineSistema(paciente){
   if(!sessao.data.session) return {ok:false,error:{message:"Acesso online não conectado."}};
   const payload=pacienteParaOnlineSistema(paciente);
   const chaveCPF=String(payload.cpf || "").replace(/\D/g,"");
+  const idOnline=String(paciente.onlineId || "").trim();
   let consulta=db.from("patients").select("id").eq("clinic_id",online.clinicId).limit(1);
-  if(chaveCPF) consulta=consulta.eq("cpf",payload.cpf);
+  if(idOnline) consulta=consulta.eq("id",idOnline);
+  else if(chaveCPF) consulta=consulta.eq("cpf",payload.cpf);
   else consulta=consulta.eq("full_name",payload.full_name);
   const existente=await consulta.maybeSingle();
   if(existente.error) return {ok:false,error:existente.error};
@@ -15136,6 +15278,7 @@ async function baixarPacientesOnlineSistema(){
       const emerg=x.emergency_contact || {};
       const convertido={
         id:porNomeCpf.get(chave)?.id || Date.now()+Math.random(),
+        onlineId:String(x.id || ""),
         numeroAtendimento:x.attendance_number || porNomeCpf.get(chave)?.numeroAtendimento || "",
         nome:x.full_name || "",
         cpf:x.cpf || "",
@@ -15174,11 +15317,18 @@ async function baixarPacientesOnlineSistema(){
 function pacienteLocalPorNomeOnlineSistema(nome){
   return get("pacientes").find(p=>String(p.nome || "").trim()===String(nome || "").trim()) || null;
 }
-async function obterPacienteOnlineIdSistema(nomePaciente){
+async function obterPacienteOnlineIdSistema(nomePaciente,pacienteIdLocal,pacienteOnlineId){
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   if(!online.ativo || !db || !online.clinicId || !nomePaciente) return null;
-  const paciente=pacienteLocalPorNomeOnlineSistema(nomePaciente) || {nome:nomePaciente};
+  const pacientes=get("pacientes");
+  const paciente=pacientes.find(p=>pacienteIdLocal && String(p.id ?? "")===String(pacienteIdLocal)) || pacientes.find(p=>pacienteOnlineId && String(p.onlineId || "")===String(pacienteOnlineId)) || pacienteLocalPorNomeOnlineSistema(nomePaciente) || {nome:nomePaciente};
+  const idOnline=String(pacienteOnlineId || paciente.onlineId || "").trim();
+  if(idOnline){
+    const porId=await db.from("patients").select("id").eq("clinic_id",online.clinicId).eq("id",idOnline).maybeSingle();
+    if(porId.error) throw porId.error;
+    if(porId.data && porId.data.id) return porId.data.id;
+  }
   const chaveCPF=String(paciente.cpf || "").replace(/\D/g,"");
   let consulta=db.from("patients").select("id").eq("clinic_id",online.clinicId).limit(1);
   if(chaveCPF) consulta=consulta.eq("cpf",paciente.cpf);
@@ -15248,12 +15398,13 @@ async function upsertOnlineSistema(tabela,payload){
   if(error) throw error;
 }
 async function excluirOnlinePorLocalIdSistema(tabela,localId){
-  if(!localId) return;
-  if(!(await sistemaOnlinePodeSincronizarSilencioso())) return;
+  if(localId===undefined || localId===null || String(localId)==="") return {ok:false,pendente:false,error:new Error("ID local não informado.")};
+  if(!(await sistemaOnlinePodeSincronizarSilencioso())) return {ok:false,pendente:true};
   const online=configOnlineSistema();
   const db=clienteSupabaseSistema();
   const {error}=await db.from(tabela).delete().eq("clinic_id",online.clinicId).eq("local_id",String(localId));
-  if(error) console.warn("Exclusão online não aplicada:",tabela,localId,error);
+  if(error){console.warn("Exclusão online não aplicada:",tabela,localId,error);return {ok:false,pendente:true,error};}
+  return {ok:true};
 }
 async function sincronizarEvolucaoRecenteOnlineSistema(dados){
   const msg=document.getElementById("onlineStatusSistema");
@@ -15262,7 +15413,7 @@ async function sincronizarEvolucaoRecenteOnlineSistema(dados){
     if(msg) msg.innerText="Evolução salva neste computador. Entre no online para sincronizar.";
     return false;
   }
-  const patientId=await obterPacienteOnlineIdSistema(dados.paciente);
+  const patientId=await obterPacienteOnlineIdSistema(dados.paciente,dados.pacienteId,dados.pacienteOnlineId);
   if(!patientId) throw new Error("Paciente não localizado no online: "+dados.paciente);
   await upsertOnlineSistema("evolutions",evolucaoParaOnlineSistema(dados,patientId));
   if(msg) msg.innerText="Evolução sincronizada no online.";
@@ -15276,6 +15427,7 @@ async function enviarProntuarioOnlineSistema(){
   if(!online.ativo || !db || !online.clinicId){if(msg) msg.innerText="Configure e ative a conexão online antes de enviar o prontuário.";return;}
   const sessao=await db.auth.getSession();
   if(!sessao.data.session){if(msg) msg.innerText="Entre no acesso online antes de enviar o prontuário.";return;}
+  await processarExclusoesPendentesProntuarioSistema();
   const anamneses=get("anamnese");
   const autorizacoes=get("autorizacoes");
   const evolucoes=get("evolucao");
@@ -15285,7 +15437,7 @@ async function enviarProntuarioOnlineSistema(){
   let ok=0, falhas=0, ultimoErro="";
   for(const x of anamneses){
     try{
-      const patientId=await obterPacienteOnlineIdSistema(x.paciente);
+      const patientId=await obterPacienteOnlineIdSistema(x.paciente,x.pacienteId,x.pacienteOnlineId);
       if(!patientId) throw new Error("Paciente não localizado: "+(x.paciente || ""));
       await upsertOnlineSistema("anamneses",anamneseParaOnlineSistema(x,patientId));
       ok++;
@@ -15293,7 +15445,7 @@ async function enviarProntuarioOnlineSistema(){
   }
   for(const x of autorizacoes){
     try{
-      const patientId=await obterPacienteOnlineIdSistema(x.paciente);
+      const patientId=await obterPacienteOnlineIdSistema(x.paciente,x.pacienteId,x.pacienteOnlineId);
       if(!patientId) throw new Error("Paciente não localizado: "+(x.paciente || ""));
       await upsertOnlineSistema("authorizations",autorizacaoParaOnlineSistema(x,patientId));
       ok++;
@@ -15301,7 +15453,7 @@ async function enviarProntuarioOnlineSistema(){
   }
   for(const x of evolucoes){
     try{
-      const patientId=await obterPacienteOnlineIdSistema(x.paciente);
+      const patientId=await obterPacienteOnlineIdSistema(x.paciente,x.pacienteId,x.pacienteOnlineId);
       if(!patientId) throw new Error("Paciente não localizado: "+(x.paciente || ""));
       await upsertOnlineSistema("evolutions",evolucaoParaOnlineSistema(x,patientId));
       ok++;
@@ -15317,6 +15469,7 @@ function anamneseOnlineParaLocalSistema(x){
   return {
     id:x.local_id || x.id,
     paciente:nomePacienteRegistroOnlineSistema(x),
+    pacienteOnlineId:String(x.patient_id || ""),
     data:x.record_date || "",
     queixa:x.complaint || "",
     objetivo:x.objective || "",
@@ -15340,6 +15493,7 @@ function autorizacaoOnlineParaLocalSistema(x){
   return {
     id:x.local_id || x.id,
     paciente:nomePacienteRegistroOnlineSistema(x),
+    pacienteOnlineId:String(x.patient_id || ""),
     proc:x.procedure_name || "Procedimento",
     data:x.authorization_date || "",
     profissional:x.professional_name || "",
@@ -15355,6 +15509,7 @@ function evolucaoOnlineParaLocalSistema(x){
   return {
     id:x.local_id || x.id,
     paciente:nomePacienteRegistroOnlineSistema(x),
+    pacienteOnlineId:String(x.patient_id || ""),
     data:x.evolution_date || "",
     proc:x.procedure_name || "",
     profissional:x.professional_name || "",
@@ -15388,6 +15543,7 @@ async function baixarProntuarioOnlineSistema(){
       avisar("Entre no acesso online antes de baixar prontuário.");
       return false;
     }
+    await processarExclusoesPendentesProntuarioSistema();
     avisar("Buscando nomes dos pacientes online...");
     const pacientesOnline=await consultaOnlineComTempoSistema(
       db.from("patients").select("id,full_name").eq("clinic_id",online.clinicId),
@@ -15508,7 +15664,7 @@ async function enviarFotosOnlineSistema(){
   let ok=0, falhas=0, ultimoErro="";
   for(const foto of fotos){
     try{
-      const patientId=await obterPacienteOnlineIdSistema(foto.paciente);
+      const patientId=await obterPacienteOnlineIdSistema(foto.paciente,foto.pacienteId,foto.pacienteOnlineId);
       if(!patientId) throw new Error("Paciente não localizado: "+(foto.paciente || ""));
       const blob=dataUrlParaBlobSistema(foto.imagem);
       if(!blob) throw new Error("Imagem inválida: "+(foto.nomeArquivo || foto.id || ""));
@@ -15972,7 +16128,7 @@ async function enviarFinanceiroOnlineSistema(){
   }
   for(const x of cobrancas){
     try{
-      const patientId=await obterPacienteOnlineIdSistema(x.paciente);
+      const patientId=await obterPacienteOnlineIdSistema(x.paciente,x.pacienteId,x.pacienteOnlineId);
       if(!patientId) throw new Error("Paciente não localizado: "+(x.paciente || ""));
       await upsertOnlineSistema("procedure_charges",cobrancaParaOnlineSistema(x,patientId));
       ok++;
@@ -16548,7 +16704,7 @@ function registrarProcedimentoPendenteProntuario(paciente,procedimento){
   const lista=get("procedimentosProntuario");
   const existe=lista.some(x=>x.paciente===paciente && x.procedimento===procedimento && x.data===hoje);
   if(!existe){
-    lista.push({id:Date.now(),paciente,procedimento,data:hoje,origem:"Anamnese",status:"Autorização pendente"});
+    lista.push({id:Date.now(),paciente,pacienteId:pacienteIdProntuarioSistema(paciente),pacienteOnlineId:pacienteOnlineIdProntuarioSistema(paciente),procedimento,data:hoje,origem:"Anamnese",status:"Autorização pendente"});
     set("procedimentosProntuario",lista);
   }
 }
